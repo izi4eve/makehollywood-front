@@ -18,7 +18,7 @@ export default function LoginPage() {
     try {
       const data = await login(email, password)
       signIn(data)
-      navigate('/account')
+      navigate('/projects')
     } catch {
       setError('Incorrect email or password')
     } finally {
@@ -27,9 +27,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <div className="bg-gray-900 p-8 rounded-2xl shadow-xl w-full max-w-md">
-        <h1 className="text-2xl font-bold text-white mb-6 text-center">Sign In</h1>
+    <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+      <div className="bg-white p-8 rounded-2xl shadow-lg border border-stone-200 w-full max-w-md">
+        <div className="mb-6 text-center">
+          <span className="text-2xl font-bold tracking-tight">
+            <span className="text-stone-900">Make</span><span className="text-teal-600">Hollywood</span>
+          </span>
+        </div>
+        <h1 className="text-xl font-semibold text-stone-800 mb-6 text-center">Sign In</h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
             type="email"
@@ -37,7 +42,7 @@ export default function LoginPage() {
             value={email}
             onChange={e => setEmail(e.target.value)}
             required
-            className="bg-gray-800 text-white rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+            className="bg-stone-50 text-stone-900 border border-stone-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent placeholder-stone-400 transition"
           />
           <input
             type="password"
@@ -45,13 +50,13 @@ export default function LoginPage() {
             value={password}
             onChange={e => setPassword(e.target.value)}
             required
-            className="bg-gray-800 text-white rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+            className="bg-stone-50 text-stone-900 border border-stone-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent placeholder-stone-400 transition"
           />
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p className="text-red-500 text-sm">{error}</p>}
           <button
             type="submit"
             disabled={loading}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg transition disabled:opacity-50"
+            className="bg-teal-600 hover:bg-teal-500 text-white font-semibold py-3 rounded-lg transition disabled:opacity-50"
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
