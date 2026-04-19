@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { login } from '../api/auth'
 import { useAuth } from '../context/AuthContext'
 
+import logo from '../assets/logo.svg'
+
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -29,12 +31,18 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-stone-50 flex items-center justify-center">
       <div className="bg-white p-8 rounded-2xl shadow-lg border border-stone-200 w-full max-w-md">
-        <div className="mb-6 text-center">
-          <span className="text-2xl font-bold tracking-tight">
-            <span className="text-stone-900">Make</span><span className="text-teal-600">Hollywood</span>
-          </span>
+        <div className="mb-6 flex justify-center">
+          <img src={logo} alt="MakeHollywood" className="h-10 w-auto pr-5" />
+          <div className="flex flex-col items-start gap-0">
+            <span className="text-2xl font-bold tracking-tight leading-none">
+              <span className="text-orange-500 italic">Make</span><span className="text-teal-600">Hollywood</span>
+            </span>
+            <span className="text-[14px] text-stone-400 tracking-wide italic leading-none">
+              A few moments later…
+            </span>
+          </div>
         </div>
-        <h1 className="text-xl font-semibold text-stone-800 mb-6 text-center">Sign In</h1>
+        <h2 className="text-xl font-semibold text-stone-800 mb-6 text-center">Sign In</h2>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
             type="email"
