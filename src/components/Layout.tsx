@@ -4,16 +4,35 @@ import logo from '../assets/logo.svg'
 
 const navGroups = [
   { items: [{ path: '/ideas', label: 'Ideas' }] },
-  { items: [{ path: '/shorts', label: 'Shorts' }, { path: '/series', label: 'Series' }] },
+  {
+    items: [
+      { path: '/scripts', label: 'Scripts' },
+      { path: '/longform', label: 'Longform', hidden: false },
+    ],
+  },
   { items: [{ path: '/voice', label: 'Voice' }] },
-  { items: [{ path: '/video', label: 'Video' }, { path: '/director', label: 'Director' }] },
+  {
+    items: [
+      { path: '/video', label: 'Video' },
+      { path: '/director', label: 'Director', hidden: false },
+    ],
+  },
   { items: [{ path: '/wrap', label: 'Wrap' }] },
+  // Hidden utility items — uncomment when ready
+  {
+    items: [
+      { path: '/feedback', label: 'Feedback', hidden: false },
+      { path: '/help', label: 'Help', hidden: false },
+    ]
+  },
+  // { items: [{ path: '/help', label: 'Help', hidden: false }] },
+  // { items: [{ path: '/feedback', label: 'Feedback', hidden: false }] },
 ]
 
 function getCtaForPath(pathname: string): { label: string; to: string } | null {
-  if (pathname.startsWith('/ideas')) return { label: '+ New Idea', to: '/ideas' }
-  if (pathname.startsWith('/shorts')) return { label: '+ New Short', to: '/shorts/new' }
-  if (pathname.startsWith('/series')) return { label: '+ New Series', to: '/series/new' }
+  if (pathname.startsWith('/ideas')) return { label: '+ New Idea', to: '/ideas/new' }
+  if (pathname.startsWith('/scripts')) return { label: '+ New Script', to: '/scripts/new' }
+  if (pathname.startsWith('/longform')) return { label: '+ New Longform', to: '/longform/new' }
   if (pathname.startsWith('/director')) return { label: '+ Upload Footage', to: '/director/new' }
   return null
 }
@@ -21,6 +40,16 @@ function getCtaForPath(pathname: string): { label: string; to: string } | null {
 export interface BreadcrumbItem {
   label: string
   to?: string
+}
+
+interface NavItem {
+  path: string
+  label: string
+  hidden?: boolean
+}
+
+interface NavGroup {
+  items: NavItem[]
 }
 
 interface LayoutProps {
@@ -34,10 +63,14 @@ export default function Layout({ children, breadcrumbs }: LayoutProps) {
   const cta = getCtaForPath(location.pathname)
   const isActive = (path: string) => location.pathname.startsWith(path)
 
+  // Filter out fully-hidden groups (all items hidden)
+  const visibleGroups: NavGroup[] = navGroups
+    .map(g => ({ items: g.items.filter(i => !i.hidden) }))
+    .filter(g => g.items.length > 0)
+
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900">
       <nav className="border-b border-stone-200 bg-white px-6 py-3 flex items-center gap-5 shadow-sm">
-        {/* Logo */}
         <Link to="/ideas" className="flex items-center gap-3 shrink-0">
           <img src={logo} alt="MakeHollywood" className="h-7 w-auto" />
           <div className="flex flex-col items-start">
@@ -51,9 +84,8 @@ export default function Layout({ children, breadcrumbs }: LayoutProps) {
           </div>
         </Link>
 
-        {/* Navigation */}
         <div className="flex items-center gap-1 overflow-x-auto">
-          {navGroups.map((group, gi) => (
+          {visibleGroups.map((group, gi) => (
             <div key={gi} className="flex items-center gap-1 shrink-0">
               {gi > 0 && (
                 <span className="text-stone-300 text-sm mx-1.5 select-none">→</span>
@@ -79,7 +111,6 @@ export default function Layout({ children, breadcrumbs }: LayoutProps) {
           ))}
         </div>
 
-        {/* Contextual CTA */}
         {cta && (
           <div className="ml-auto shrink-0">
             <button
@@ -92,7 +123,6 @@ export default function Layout({ children, breadcrumbs }: LayoutProps) {
         )}
       </nav>
 
-      {/* Breadcrumbs */}
       {breadcrumbs && breadcrumbs.length > 0 && (
         <div className="px-6 py-2 bg-white border-b border-stone-100 flex items-center gap-1.5">
           {breadcrumbs.map((crumb, i) => (
