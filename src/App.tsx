@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
+import OAuthCallbackPage from './pages/OAuthCallbackPage'
 import AccountPage from './pages/AccountPage'
 import IdeasPage from './pages/IdeasPage'
 import NewIdeaPage from './pages/NewIdeaPage'
@@ -13,6 +14,7 @@ import VideoPage from './pages/VideoPage'
 import DirectorPage from './pages/DirectorPage'
 import WrapPage from './pages/WrapPage'
 import NewLongformPage from './pages/NewLongformPage'
+import ConfirmPage from './pages/ConfirmPage'
 
 function Protected({ children }: { children: React.ReactNode }) {
   return <ProtectedRoute>{children}</ProtectedRoute>
@@ -24,6 +26,9 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+          <Route path="/confirm" element={<ConfirmPage />} />
+
           <Route path="/account" element={<Protected><AccountPage /></Protected>} />
 
           <Route path="/ideas" element={<Protected><IdeasPage /></Protected>} />

@@ -18,15 +18,13 @@ const navGroups = [
     ],
   },
   { items: [{ path: '/wrap', label: 'Wrap' }] },
-  // Hidden utility items — uncomment when ready
   {
     items: [
       { path: '/feedback', label: 'Feedback', hidden: false },
       { path: '/help', label: 'Help', hidden: false },
+      { path: '/account', label: 'Account', hidden: false },
     ]
   },
-  // { items: [{ path: '/help', label: 'Help', hidden: false }] },
-  // { items: [{ path: '/feedback', label: 'Feedback', hidden: false }] },
 ]
 
 function getCtaForPath(pathname: string): { label: string; to: string } | null {
