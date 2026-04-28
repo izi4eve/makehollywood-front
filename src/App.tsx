@@ -15,6 +15,7 @@ import DirectorPage from './pages/DirectorPage'
 import WrapPage from './pages/WrapPage'
 import NewLongformPage from './pages/NewLongformPage'
 import ConfirmPage from './pages/ConfirmPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 
 function Protected({ children }: { children: React.ReactNode }) {
   return <ProtectedRoute>{children}</ProtectedRoute>
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
           <Route path="/confirm" element={<ConfirmPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           <Route path="/account" element={<Protected><AccountPage /></Protected>} />
 

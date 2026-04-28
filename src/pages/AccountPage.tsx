@@ -6,7 +6,7 @@ import Layout from '../components/Layout'
 const API = '/api/auth'
 
 export default function AccountPage() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, token } = useAuth()
   const navigate = useNavigate()
   const isAdmin = user?.role === 'ROLE_ADMIN'
 
@@ -33,8 +33,6 @@ export default function AccountPage() {
   // Admin: cleanup
   const [cleanupMsg, setCleanupMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [cleanupLoading, setCleanupLoading] = useState(false)
-
-  const token = user ? JSON.parse(localStorage.getItem('auth_user') || '{}').accessToken : null
 
   const handleLogout = () => {
     signOut()
