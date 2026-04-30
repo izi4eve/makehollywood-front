@@ -20,8 +20,8 @@ const navGroups = [
   { items: [{ path: '/wrap', label: 'Wrap' }] },
   {
     items: [
-      { path: '/feedback', label: 'Feedback', hidden: false },
       { path: '/help', label: 'Help', hidden: false },
+      { path: '/feedback', label: 'Feedback', hidden: false },
       { path: '/account', label: 'Account', hidden: false },
     ]
   },

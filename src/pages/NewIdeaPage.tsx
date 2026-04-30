@@ -1,43 +1,16 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Layout'
-
-const LANGUAGES = [
-  { code: 'en', label: '🇬🇧 English' },
-  { code: 'ru', label: '🇷🇺 Русский' },
-  { code: 'de', label: '🇩🇪 Deutsch' },
-  { code: 'fr', label: '🇫🇷 Français' },
-  { code: 'es', label: '🇪🇸 Español' },
-  { code: 'uk', label: '🇺🇦 Українська' },
-]
+import { useAuth } from '../context/AuthContext'
+import { extractIdeas, saveIdea } from '../api/ideas'
+import { LANGUAGES } from '../data/languages'
 
 interface ExtractedIdea {
-  id: string
-  text: string      // in output language
-  tr: string        // translation back to input language
+  tempId: string
+  text: string
+  tr?: string
   flash: boolean
 }
-
-const mockExtracted: ExtractedIdea[] = [
-  {
-    id: 'e1',
-    text: 'If you avoid notifications and news first thing in the morning, you stay productive for much longer.',
-    tr: 'Если не смотреть уведомления и новости с самого утра, остаёшься продуктивным значительно дольше.',
-    flash: false,
-  },
-  {
-    id: 'e2',
-    text: 'Checking messages first thing puts your brain in reactive mode — and it never fully recovers that day.',
-    tr: 'Проверка сообщений с утра переключает мозг в реактивный режим — и он так и не восстанавливается за день.',
-    flash: false,
-  },
-  {
-    id: 'e3',
-    text: 'Just 30 minutes without your phone in the morning can drop anxiety and close tasks you\'ve been avoiding for months.',
-    tr: 'Всего 30 минут без телефона утром снижают тревогу и помогают закрыть задачи, которые откладывались месяцами.',
-    flash: false,
-  },
-]
 
 const PLACEHOLDERS = [
   "Toothpaste is the cheapest and fastest way to polish headlights.",
@@ -50,6 +23,7 @@ const PLACEHOLDERS = [
 
 export default function NewIdeaPage() {
   const navigate = useNavigate()
+  const { token } = useAuth()
 
   const [inputLang, setInputLang] = useState('ru')
   const [outputLang, setOutputLang] = useState('en')
@@ -57,6 +31,7 @@ export default function NewIdeaPage() {
 
   const [rawText, setRawText] = useState('')
   const [extracting, setExtracting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [extracted, setExtracted] = useState<ExtractedIdea[]>([])
   const [savedCount, setSavedCount] = useState(0)
 
@@ -64,21 +39,57 @@ export default function NewIdeaPage() {
     () => 'Sample: ' + PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)]
   )
 
-  const handleExtract = () => {
-    if (!rawText.trim()) return
+  const handleExtract = async () => {
+    if (!rawText.trim() || !token) return
     setExtracting(true)
-    setTimeout(() => {
+    setError(null)
+    setExtracted([])
+    setSavedCount(0)
+    try {
+      const results = await extractIdeas(rawText, inputLang, outputLang, token)
+      setExtracted(results.map((r, i) => ({
+        tempId: `e${i}`,
+        text: r.text,
+        tr: r.tr,
+        flash: false,
+      })))
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        if (e.message === 'moderation') {
+          setError('This content couldn\'t be processed. Try rephrasing your idea.')
+        } else if (e.message === 'rate_limit') {
+          setError('Too many requests. Please wait a moment and try again.')
+        } else if (e.message === 'timeout') {
+          setError('AI is taking too long. Please try again.')
+        } else {
+          setError('Something went wrong. Please try again.')
+        }
+      }
+    } finally {
       setExtracting(false)
-      setExtracted(mockExtracted.map(e => ({ ...e, flash: false })))
-      setSavedCount(0)
-    }, 1200)
+    }
   }
 
-  const triggerRemove = (id: string, type: 'add' | 'delete') => {
-    setExtracted(prev => prev.map(e => e.id === id ? { ...e, flash: true } : e))
+  const triggerRemove = async (tempId: string, type: 'add' | 'delete') => {
+    const idea = extracted.find(e => e.tempId === tempId)
+    if (!idea || !token) return
+
+    setExtracted(prev => prev.map(e => e.tempId === tempId ? { ...e, flash: true } : e))
+
+    if (type === 'add') {
+      try {
+        await saveIdea(rawText, idea.text, idea.tr, inputLang, outputLang, token)
+        setSavedCount(c => c + 1)
+      } catch {
+        // revert flash if save failed
+        setExtracted(prev => prev.map(e => e.tempId === tempId ? { ...e, flash: false } : e))
+        setError('Failed to save idea. Please try again.')
+        return
+      }
+    }
+
     setTimeout(() => {
-      setExtracted(prev => prev.filter(e => e.id !== id))
-      if (type === 'add') setSavedCount(c => c + 1)
+      setExtracted(prev => prev.filter(e => e.tempId !== tempId))
     }, 350)
   }
 
@@ -127,16 +138,28 @@ export default function NewIdeaPage() {
           <textarea
             value={rawText}
             onChange={e => setRawText(e.target.value)}
-            // placeholder="Just dump your thoughts here…"
             placeholder={placeholder}
             rows={5}
             className="w-full bg-stone-50 border border-stone-200 text-stone-900 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition resize-none placeholder-stone-400"
           />
-          <div className="flex justify-end mt-3">
+          {error && (
+            <p className="text-xs text-red-500 mt-2">{error}</p>
+          )}
+          <div className="flex justify-between items-center mt-3">
+            <div>
+              {savedCount > 0 && !allDone && (
+                <button
+                  onClick={() => navigate('/ideas')}
+                  className="bg-orange-500 hover:bg-orange-400 text-white text-sm font-semibold px-5 py-2 rounded-lg transition"
+                >
+                  ← Ideas
+                </button>
+              )}
+            </div>
             <button
               onClick={handleExtract}
               disabled={!rawText.trim() || extracting}
-              className="bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition"
+              className="bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white text-sm font-semibold px-5 py-2 rounded-lg transition"
             >
               {extracting ? 'Extracting…' : 'Extract ideas →'}
             </button>
@@ -152,7 +175,7 @@ export default function NewIdeaPage() {
             <div className="flex flex-col gap-2">
               {extracted.map(idea => (
                 <div
-                  key={idea.id}
+                  key={idea.tempId}
                   className={`bg-white border rounded-xl px-5 py-4 flex items-start gap-4 transition-all duration-300 ${idea.flash
                     ? 'border-green-300 bg-green-50 opacity-0 scale-95'
                     : 'border-stone-200 hover:border-stone-300'
@@ -160,20 +183,20 @@ export default function NewIdeaPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-stone-800 leading-relaxed">{idea.text}</p>
-                    {showTr && (
+                    {showTr && idea.tr && (
                       <p className="text-xs text-stone-400 italic mt-1.5 leading-relaxed">{idea.tr}</p>
                     )}
                   </div>
                   <div className="flex gap-1.5 shrink-0 mt-0.5">
                     <button
-                      onClick={() => triggerRemove(idea.id, 'delete')}
+                      onClick={() => triggerRemove(idea.tempId, 'delete')}
                       title="Discard"
                       className="w-7 h-7 flex items-center justify-center rounded-lg bg-stone-100 hover:bg-red-50 hover:text-red-500 text-stone-400 transition text-xs"
                     >
                       🗑
                     </button>
                     <button
-                      onClick={() => triggerRemove(idea.id, 'add')}
+                      onClick={() => triggerRemove(idea.tempId, 'add')}
                       title="Add to Ideas"
                       className="w-7 h-7 flex items-center justify-center rounded-lg bg-green-100 hover:bg-green-200 text-green-600 transition font-bold text-sm"
                     >
@@ -195,7 +218,7 @@ export default function NewIdeaPage() {
             }
             <div className="flex justify-center gap-3">
               <button
-                onClick={() => { setExtracted([]); setRawText('') }}
+                onClick={() => { setExtracted([]); setRawText(''); setError(null) }}
                 className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 px-3 py-1.5 rounded-lg transition"
               >
                 Extract more
