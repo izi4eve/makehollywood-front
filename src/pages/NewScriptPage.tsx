@@ -1,207 +1,135 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Layout'
+import { useAuth } from '../context/AuthContext'
+import { generateScripts, refineScript, saveScript } from '../api/scripts'
+import { fetchIdeas, markIdeaUsed, type IdeaResponse } from '../api/ideas'
+import { LANGUAGES, LANG_FLAG } from '../data/languages'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-const LANGUAGES = [
-  { code: 'en', label: '🇬🇧 English' },
-  { code: 'ru', label: '🇷🇺 Русский' },
-  { code: 'de', label: '🇩🇪 Deutsch' },
-  { code: 'fr', label: '🇫🇷 Français' },
-  { code: 'es', label: '🇪🇸 Español' },
-  { code: 'uk', label: '🇺🇦 Українська' },
-]
-
-interface GeneratedVariant {
-  id: string
-  text: string         // output language
-  tr?: string          // translation back to input language (if langs differ)
-  instruction: string  // current instruction field value
-  refining: boolean    // is AI currently refining this variant
-  children: RefinedVariant[]
-}
-
-interface RefinedVariant {
+interface Variant {
   id: string
   text: string
   tr?: string
+  name?: string
   instruction: string
   refining: boolean
-  children: RefinedVariant[]
+  saved: boolean
+  parentId?: string   // which variant triggered refine
 }
-
-// ── Mock data ──────────────────────────────────────────────────────────────────
-
-const mockIdeas = [
-  { id: 'i1', idea: 'If you avoid notifications and news first thing in the morning, you stay productive for much longer.', note: 'Morning routine series?' },
-  { id: 'i2', idea: 'Checking messages first thing puts your brain in reactive mode — and it never fully recovers that day.', note: '' },
-  { id: 'i3', idea: 'Just 30 minutes without your phone in the morning can drop anxiety and close tasks you\'ve been avoiding for months.', note: 'Personal story angle.' },
-]
-
-const mockGenerated: GeneratedVariant[] = [
-  {
-    id: 'v1',
-    text: `Most people lose 2 hours every morning — and they have no idea.
-The moment you check your phone, your brain switches into reactive mode. You stop thinking about your goals and start responding to everyone else's.
-I tracked this for 14 days. On mornings without the scroll, I finished 2x more meaningful work before noon.
-No phone for the first 30 minutes after waking up. That window is yours — protect it.
-Does this sound too simple? Try it tomorrow and tell me what changed.`,
-    tr: `Большинство людей теряют 2 часа каждое утро — и даже не догадываются об этом.
-В момент, когда ты берёшь телефон, мозг переходит в реактивный режим. Ты перестаёшь думать о своих целях и начинаешь отвечать на чужие.
-Я отслеживал это 14 дней. В дни без утреннего скроллинга я делал в 2 раза больше значимой работы до полудня.
-Никакого телефона первые 30 минут после пробуждения. Это окно — твоё. Защищай его.
-Звучит слишком просто? Попробуй завтра и напиши, что изменилось.`,
-    instruction: '',
-    refining: false,
-    children: [],
-  },
-  {
-    id: 'v2',
-    text: `This one habit doubled my output — and it has nothing to do with waking up at 5am.
-You'd think it's some complex system. It's not.
-In 7 days, my anxiety dropped noticeably. I closed 3 projects I'd been avoiding for months.
-The habit: no phone for the first 30 minutes of the day. That's it.
-What's the first thing you do after waking up? Drop it below 👇`,
-    tr: `Эта одна привычка удвоила мою продуктивность — и она не связана с подъёмом в 5 утра.
-Можно подумать, что это сложная система. Нет.
-За 7 дней тревога заметно спала. Я закрыл 3 проекта, которые откладывал месяцами.
-Привычка: первые 30 минут без телефона. Всё.
-Что ты делаешь первым делом после пробуждения? Пиши ниже 👇`,
-    instruction: '',
-    refining: false,
-    children: [],
-  },
-  {
-    id: 'v3',
-    text: `I used to think I wasn't a morning person. Turns out — I was just doing mornings wrong.
-Every day started the same: phone, notifications, anxiety. Before I'd even stood up, my brain was already in someone else's story.
-The fix was embarrassingly simple. 30 minutes. No screen. Just me and what actually matters.
-Three weeks later, I finish my most important work before lunch — every single day.
-What would your mornings look like without the scroll?`,
-    tr: `Я думал, что я просто не жаворонок. Оказалось — я просто неправильно проводил утро.
-Каждый день начинался одинаково: телефон, уведомления, тревога. Ещё не встав с кровати, я уже жил в чужой истории.
-Решение оказалось до неловкого простым. 30 минут. Без экрана. Только я и то, что действительно важно.
-Три недели спустя — самую важную работу я закрываю до обеда, каждый день.
-Как бы выглядело твоё утро без скроллинга?`,
-    instruction: '',
-    refining: false,
-    children: [],
-  },
-]
 
 const PLACEHOLDERS = [
   "Toothpaste is the cheapest and fastest way to polish headlights.",
   "They say read 100 books to get rich. I read more and didn't. Then I realised — the only book worth writing is your own.",
   "The biggest mistake in photography: putting the subject in the centre of the frame.",
   "I tried a lot of diets. All of them worked temporarily and painfully. The only thing that stuck was the insulin index diet.",
-  "Less than 1% of people try to start a business. 9 out of 10 fail in year one. Of those left, 70% are gone in 10 years. Success rate: 0.3%. It's more luck than pattern.",
-  "Everyone worries AI will take all jobs. But human needs are the entire foundation of any economy. The real issue is just that a lot of people will need to learn new skills.",
+  "Less than 1% of people try to start a business. 9 out of 10 fail in year one. Success rate: 0.3%.",
+  "Everyone worries AI will take all jobs. But human needs are the entire foundation of any economy.",
 ]
 
-// ── Variant card (recursive — handles both top-level and refined children) ────
+const MODAL_PAGE_SIZE = 8
+
+// ── Variant card ──────────────────────────────────────────────────────────────
 
 interface VariantCardProps {
-  variant: GeneratedVariant | RefinedVariant
+  variant: Variant
+  index: number
   showTr: boolean
-  depth?: number
-  onSave: (text: string) => void
-  onInstructionChange: (id: string, value: string) => void
+  onSave: (v: Variant, text: string) => void
   onRefine: (id: string) => void
   onDelete: (id: string) => void
+  onInstructionChange: (id: string, value: string) => void
+  onNameChange: (id: string, value: string) => void
+  cardRef?: (el: HTMLDivElement | null) => void
 }
 
 function VariantCard({
-  variant,
-  showTr,
-  depth = 0,
-  onSave,
-  onInstructionChange,
-  onRefine,
-  onDelete,
+  variant, index, showTr, onSave, onRefine, onDelete, onInstructionChange, onNameChange, cardRef,
 }: VariantCardProps) {
   const [text, setText] = useState(variant.text)
-  const isRefining = variant.refining
 
   return (
-    <div className={`${depth > 0 ? 'ml-5 border-l-2 border-stone-100 pl-4' : ''}`}>
-      <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
+    <div ref={cardRef} className={`bg-white border rounded-xl overflow-hidden transition ${
+      variant.saved ? 'border-green-300' : 'border-stone-200'
+    }`}>
 
-        {/* Text field */}
-        <div className="px-5 pt-5 pb-3">
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            rows={7}
-            className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2.5 text-sm text-stone-800 leading-relaxed outline-none resize-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition"
-          />
+      {/* Version label */}
+      <div className="px-5 pt-3 pb-0">
+        <p className="text-[10px] text-stone-300 uppercase tracking-widest">Version {index + 1}</p>
+      </div>
 
-          {/* Translation */}
-          {showTr && variant.tr && (
-            <p className="text-xs text-stone-400 italic leading-relaxed whitespace-pre-line border-t border-stone-100 pt-3 mt-1">
-              {variant.tr}
-            </p>
-          )}
-        </div>
+      {/* Name field */}
+      <div className="px-5 pt-2 pb-2">
+        <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Name</label>
+        <input
+          type="text"
+          value={variant.name ?? ''}
+          onChange={e => onNameChange(variant.id, e.target.value)}
+          placeholder="Short title for this script…"
+          className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition"
+        />
+      </div>
 
-        {/* Instruction field */}
-        <div className="border-t border-stone-100 px-5 py-3 bg-stone-50/60">
-          <div className="flex gap-2 items-start">
-            <textarea
-              value={variant.instruction}
-              onChange={e => onInstructionChange(variant.id, e.target.value)}
-              placeholder="Make shorter · Change hook · Translate to German · Make it punchier…"
-              disabled={isRefining}
-              rows={3}
-              className="flex-1 bg-white border border-stone-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition placeholder-stone-300 disabled:opacity-50 resize-none"
-            />
-            <button
-              onClick={() => onRefine(variant.id)}
-              disabled={!variant.instruction.trim() || isRefining}
-              className="text-xs font-medium px-3 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-30 text-white transition whitespace-nowrap"
-            >
-              {isRefining ? 'Applying…' : 'Apply →'}
-            </button>
-          </div>
-          <p className="text-[10px] text-stone-300 mt-1.5">
-            A refined version will appear below — your current text stays untouched.
+      {/* Script text */}
+      <div className="px-5 pb-3">
+        <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Script</label>
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          rows={7}
+          className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2.5 text-sm text-stone-800 leading-relaxed outline-none resize-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition"
+        />
+        {showTr && variant.tr && (
+          <p className="text-xs text-stone-400 italic leading-relaxed whitespace-pre-line border-t border-stone-100 pt-3 mt-1">
+            {variant.tr}
           </p>
-        </div>
+        )}
+      </div>
 
-        {/* Actions */}
-        <div className="border-t border-stone-100 px-5 py-3 flex items-center justify-between">
+      {/* Refine field */}
+      <div className="border-t border-stone-100 px-5 py-3 bg-stone-50/60">
+        <div className="flex gap-2 items-start">
+          <textarea
+            value={variant.instruction}
+            onChange={e => onInstructionChange(variant.id, e.target.value)}
+            placeholder="Make shorter · Change hook · Make it punchier…"
+            disabled={variant.refining}
+            rows={2}
+            className="flex-1 bg-white border border-stone-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition placeholder-stone-300 disabled:opacity-50 resize-none"
+          />
           <button
-            onClick={() => onDelete(variant.id)}
-            className="text-xs text-red-400 hover:text-stone-400 transition"
+            onClick={() => onRefine(variant.id)}
+            disabled={!variant.instruction.trim() || variant.refining}
+            className="text-xs font-medium px-3 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-30 text-white transition whitespace-nowrap"
           >
-            Remove
+            {variant.refining ? 'Applying…' : 'Apply →'}
           </button>
+        </div>
+        <p className="text-[10px] text-stone-300 mt-1.5">
+          A refined version will appear right after this one.
+        </p>
+      </div>
+
+      {/* Actions */}
+      <div className="border-t border-stone-100 px-5 py-3 flex items-center justify-between">
+        <button
+          onClick={() => onDelete(variant.id)}
+          className="text-xs text-red-400 hover:text-red-500 transition"
+        >
+          Remove
+        </button>
+        {variant.saved ? (
+          <span className="text-xs text-green-600 font-medium">✓ Saved</span>
+        ) : (
           <button
-            onClick={() => onSave(text)}
+            onClick={() => onSave(variant, text)}
             className="text-xs font-semibold px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-400 text-white transition"
           >
             Save this version
           </button>
-        </div>
+        )}
       </div>
-
-      {/* Refined children */}
-      {variant.children.length > 0 && (
-        <div className="flex flex-col gap-4 mt-4">
-          {variant.children.map(child => (
-            <VariantCard
-              key={child.id}
-              variant={child}
-              showTr={showTr}
-              depth={depth + 1}
-              onSave={onSave}
-              onInstructionChange={onInstructionChange}
-              onRefine={onRefine}
-              onDelete={onDelete}
-            />
-          ))}
-        </div>
-      )}
     </div>
   )
 }
@@ -210,146 +138,174 @@ function VariantCard({
 
 export default function NewScriptPage() {
   const navigate = useNavigate()
+  const { token } = useAuth()
 
-  // Language
   const [inputLang, setInputLang] = useState('ru')
   const [outputLang, setOutputLang] = useState('en')
   const showTr = inputLang !== outputLang
 
-  // Idea fields
   const [source, setSource] = useState('')
-  const [ideaText, setIdeaText] = useState('')
-  const [note, setNote] = useState('')
+  const [coreMessage, setCoreMessage] = useState('')
 
-  // Idea picker modal
-  const [modalOpen, setModalOpen] = useState(false)
-  const [modalSearch, setModalSearch] = useState('')
-
-  // Generation state
   const [generating, setGenerating] = useState(false)
   const [generated, setGenerated] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // All variants (flat map by id for easy lookup)
-  const [variants, setVariants] = useState<GeneratedVariant[]>([])
+  const [variants, setVariants] = useState<Variant[]>([])
+
+  // refs for auto-scroll to refined variant
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  // Ideas picker modal
+  const [modalShowUsed, setModalShowUsed] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalSearch, setModalSearch] = useState('')
+  const [modalPage, setModalPage] = useState(1)
+  const [ideas, setIdeas] = useState<IdeaResponse[]>([])
+  const [ideasLoading, setIdeasLoading] = useState(false)
 
   const [placeholder] = useState(
     () => 'Sample: ' + PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)]
   )
 
-  const filteredIdeas = mockIdeas.filter(i =>
-    i.idea.toLowerCase().includes(modalSearch.toLowerCase())
-  )
+  useEffect(() => {
+    if (!modalOpen || ideas.length > 0 || !token) return
+    setIdeasLoading(true)
+    fetchIdeas(token)
+      .then(setIdeas)
+      .catch(() => {})
+      .finally(() => setIdeasLoading(false))
+  }, [modalOpen, token])
+
+  const filteredIdeas = useMemo(() => {
+    const q = modalSearch.toLowerCase().trim()
+    let list = modalShowUsed ? ideas.filter(i => i.used) : ideas.filter(i => !i.used)
+    if (q) list = list.filter(i =>
+      i.idea.toLowerCase().includes(q) || i.source.toLowerCase().includes(q)
+    )
+    return list
+  }, [ideas, modalSearch, modalShowUsed])
+
+  const modalTotalPages = Math.ceil(filteredIdeas.length / MODAL_PAGE_SIZE)
+  const modalPaginated = filteredIdeas.slice((modalPage - 1) * MODAL_PAGE_SIZE, modalPage * MODAL_PAGE_SIZE)
+  const usedCount = useMemo(() => ideas.filter(i => i.used).length, [ideas])
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const handleGenerate = () => {
-    if (!source.trim() && !ideaText.trim()) return
+  const handleGenerate = async () => {
+    if (!source.trim() || !token) return
     setGenerating(true)
-    // TODO: real API call — for now use mock
-    setTimeout(() => {
-      setVariants(mockGenerated.map(v => ({ ...v })))
-      setGenerating(false)
-      setGenerated(true)
-    }, 1400)
-  }
-
-  const handleSelectIdea = (idea: typeof mockIdeas[0]) => {
-    setIdeaText(idea.idea)
-    setNote(idea.note)
-    setModalOpen(false)
-    setModalSearch('')
-  }
-
-  // Update instruction field on any variant (top-level or nested) by id
-  const updateInstruction = (id: string, value: string) => {
-    setVariants(prev => updateInTree(prev, id, v => ({ ...v, instruction: value })))
-  }
-
-  // Refine a variant: simulate AI call, add child
-  const handleRefine = (id: string) => {
-    // Mark as refining
-    setVariants(prev => updateInTree(prev, id, v => ({ ...v, refining: true })))
-
-    setTimeout(() => {
-      const childId = `${id}-r${Date.now()}`
-      const child: RefinedVariant = {
-        id: childId,
-        text: `[Refined version based on: "${getInstruction(id)}"]\n\nThis is where the AI-refined text would appear. The original structure is preserved but adjusted per your instruction.`,
-        tr: showTr ? `[Перевод улучшенной версии]` : undefined,
+    setError(null)
+    setGenerated(false)
+    setVariants([])
+    try {
+      const results = await generateScripts(source, coreMessage, inputLang, outputLang, token)
+      setVariants(results.map((r, i) => ({
+        id: `v${i}-${Date.now()}`,
+        text: r.text,
+        tr: r.tr,
+        name: r.name ?? '',
         instruction: '',
         refining: false,
-        children: [],
+        saved: false,
+      })))
+      setGenerated(true)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : ''
+      if (msg === 'moderation') setError("This content couldn't be processed. Try rephrasing.")
+      else if (msg === 'rate_limit') setError('Too many requests. Please wait a moment.')
+      else if (msg === 'timeout') setError('AI is taking too long. Please try again.')
+      else setError('Something went wrong. Please try again.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleRefine = async (id: string) => {
+    const variant = variants.find(v => v.id === id)
+    if (!variant || !token) return
+
+    setVariants(prev => prev.map(v => v.id === id ? { ...v, refining: true } : v))
+    try {
+      const result = await refineScript(variant.text, variant.instruction, inputLang, outputLang, token)
+      const newId = `${id}-r${Date.now()}`
+      const newVariant: Variant = {
+        id: newId,
+        text: result.text,
+        tr: result.tr,
+        name: variant.name,
+        instruction: '',
+        refining: false,
+        saved: false,
+        parentId: id,
       }
-      setVariants(prev =>
-        updateInTree(prev, id, v => ({
-          ...v,
-          refining: false,
-          instruction: '',
-          children: [...v.children, child],
-        }))
-      )
-    }, 1200)
+      // Insert right after parent
+      setVariants(prev => {
+        const updated = prev.map(v => v.id === id ? { ...v, refining: false, instruction: '' } : v)
+        const idx = updated.findIndex(v => v.id === id)
+        updated.splice(idx + 1, 0, newVariant)
+        return [...updated]
+      })
+      // Scroll to new variant after render
+      setTimeout(() => {
+        cardRefs.current[newId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    } catch {
+      setVariants(prev => prev.map(v => v.id === id ? { ...v, refining: false } : v))
+      setError('Failed to refine. Please try again.')
+    }
   }
 
   const handleDelete = (id: string) => {
-    setVariants(prev => deleteFromTree(prev, id))
+    setVariants(prev => prev.filter(v => v.id !== id))
   }
 
-  const handleSave = (text: string) => {
-    // TODO: save to backend
-    console.log('Saving:', text)
-    navigate('/scripts')
-  }
-
-  // ── Tree helpers ───────────────────────────────────────────────────────────
-
-  function getInstruction(id: string): string {
-    const found = findInTree(variants, id)
-    return found?.instruction ?? ''
-  }
-
-  function findInTree(nodes: (GeneratedVariant | RefinedVariant)[], id: string): (GeneratedVariant | RefinedVariant) | null {
-    for (const n of nodes) {
-      if (n.id === id) return n
-      const found = findInTree(n.children, id)
-      if (found) return found
+  const handleSave = async (variant: Variant, text: string) => {
+    if (!token) return
+    try {
+      await saveScript(
+        source,
+        coreMessage,
+        variant.name ?? '',
+        text,
+        variant.tr,
+        inputLang,
+        outputLang,
+        token
+      )
+      // Mark as saved but stay on page
+      setVariants(prev => prev.filter(v => v.id !== variant.id))
+    } catch {
+      setError('Failed to save. Please try again.')
     }
-    return null
   }
 
-  function updateInTree(
-    nodes: GeneratedVariant[],
-    id: string,
-    fn: (v: GeneratedVariant | RefinedVariant) => GeneratedVariant | RefinedVariant
-  ): GeneratedVariant[] {
-    return nodes.map(n => {
-      if (n.id === id) return fn(n) as GeneratedVariant
-      return { ...n, children: updateChildrenInTree(n.children, id, fn) }
-    })
+  const handleSelectIdea = (idea: IdeaResponse) => {
+    setCoreMessage(idea.idea)
+    if (!source.trim()) setSource(idea.source)
+    setModalOpen(false)
+    setModalSearch('')
+    setModalPage(1)
+    if (token && !idea.used) {
+      markIdeaUsed(idea.id, true, token)
+        .then(updated => setIdeas(prev => prev.map(i => i.id === updated.id ? updated : i)))
+        .catch(() => {})
+    }
   }
 
-  function updateChildrenInTree(
-    nodes: RefinedVariant[],
-    id: string,
-    fn: (v: GeneratedVariant | RefinedVariant) => GeneratedVariant | RefinedVariant
-  ): RefinedVariant[] {
-    return nodes.map(n => {
-      if (n.id === id) return fn(n) as RefinedVariant
-      return { ...n, children: updateChildrenInTree(n.children, id, fn) }
-    })
+  const setCardRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
+    cardRefs.current[id] = el
+  }, [])
+
+  const updateInstruction = (id: string, value: string) => {
+    setVariants(prev => prev.map(v => v.id === id ? { ...v, instruction: value } : v))
   }
 
-  function deleteFromTree(nodes: GeneratedVariant[], id: string): GeneratedVariant[] {
-    return nodes
-      .filter(n => n.id !== id)
-      .map(n => ({ ...n, children: deleteChildrenFromTree(n.children, id) }))
+  const updateName = (id: string, value: string) => {
+    setVariants(prev => prev.map(v => v.id === id ? { ...v, name: value } : v))
   }
 
-  function deleteChildrenFromTree(nodes: RefinedVariant[], id: string): RefinedVariant[] {
-    return nodes
-      .filter(n => n.id !== id)
-      .map(n => ({ ...n, children: deleteChildrenFromTree(n.children, id) }))
-  }
+  const savedCount = variants.filter(v => v.saved).length
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -387,12 +343,12 @@ export default function NewScriptPage() {
           </span>
         </div>
 
-        {/* Idea input */}
+        {/* Input card */}
         <div className="bg-white border border-stone-200 rounded-xl p-5 mb-6">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-medium text-stone-700">What's your video about?</p>
             <button onClick={() => setModalOpen(true)}
-              className="text-xs text-teal-600 hover:text-teal-500 border border-teal-200 hover:border-teal-400 px-3 py-1.5 rounded-lg transition">
+              className="text-xs font-semibold text-teal-600 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-lg transition">
               Pick from Ideas →
             </button>
           </div>
@@ -406,102 +362,192 @@ export default function NewScriptPage() {
                 className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition resize-none placeholder-stone-400" />
             </div>
             <div>
-              <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Key idea</label>
-              <textarea value={ideaText} onChange={e => setIdeaText(e.target.value)}
-                placeholder="The core message — problem + solution or pain + advice"
+              <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Core message</label>
+              <textarea value={coreMessage} onChange={e => setCoreMessage(e.target.value)}
+                placeholder="The core insight — problem + solution or pain + advice"
                 rows={2}
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition resize-none placeholder-stone-400" />
-            </div>
-            <div>
-              <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Notes</label>
-              <textarea value={note} onChange={e => setNote(e.target.value)}
-                placeholder="Tone, audience, anything extra…"
-                rows={1}
                 className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition resize-none placeholder-stone-400" />
             </div>
           </div>
 
-          <div className="flex justify-end mt-4">
-            <button onClick={handleGenerate}
-              disabled={(!source.trim() && !ideaText.trim()) || generating}
-              className="bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition">
+          {error && <p className="text-xs text-red-500 mt-3">{error}</p>}
+
+          <div className="flex items-center justify-between mt-4">
+            <button
+              onClick={() => navigate('/scripts')}
+              className="bg-orange-500 hover:bg-orange-400 text-white text-sm font-semibold px-5 py-2 rounded-lg transition"
+            >
+              ← Scripts
+            </button>
+            <button
+              onClick={handleGenerate}
+              disabled={!source.trim() || generating}
+              className="bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white text-sm font-semibold px-5 py-2 rounded-lg transition"
+            >
               {generating ? 'Generating…' : 'Generate scripts →'}
             </button>
           </div>
         </div>
 
-        {/* ── GENERATED VARIANTS ── */}
-        {generated && (
+        {/* Generated variants */}
+        {generated && variants.length > 0 && (
           <div>
-            <div className="mb-5">
-              <h2 className="text-base font-semibold text-stone-900 mb-1">
-                3 scripts, ready to use
-              </h2>
-              <p className="text-xs text-stone-400">
-                Edit directly, or describe what to change and hit Apply — a refined version will appear below your original.
-                Save as many as you like.
-              </p>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-base font-semibold text-stone-900 mb-1">
+                  {variants.length} script{variants.length > 1 ? 's' : ''}, ready to use
+                </h2>
+                <p className="text-xs text-stone-400">
+                  Edit directly, or describe what to change and hit Apply — refined version appears right after.
+                  Save whichever versions you like.
+                </p>
+              </div>
+              {savedCount > 0 && (
+                <button
+                  onClick={() => navigate('/scripts')}
+                  className="text-xs font-semibold px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-400 text-white transition whitespace-nowrap ml-4"
+                >
+                  → Go to Scripts ({savedCount})
+                </button>
+              )}
             </div>
 
             <div className="flex flex-col gap-6 pb-16">
               {variants.map((variant, i) => (
-                <div key={variant.id}>
-                  <p className="text-[10px] text-stone-300 uppercase tracking-widest mb-2 ml-1">
-                    Version {i + 1}
-                  </p>
-                  <VariantCard
-                    variant={variant}
-                    showTr={showTr}
-                    depth={0}
-                    onSave={handleSave}
-                    onInstructionChange={updateInstruction}
-                    onRefine={handleRefine}
-                    onDelete={handleDelete}
-                  />
-                </div>
+                <VariantCard
+                  key={variant.id}
+                  variant={variant}
+                  index={i}
+                  showTr={showTr}
+                  onSave={handleSave}
+                  onRefine={handleRefine}
+                  onDelete={handleDelete}
+                  onInstructionChange={updateInstruction}
+                  onNameChange={updateName}
+                  cardRef={setCardRef(variant.id)}
+                />
               ))}
             </div>
           </div>
         )}
+
+        {generated && variants.length === 0 && (
+          <div className="text-center py-10 text-stone-400 text-sm">
+            <p className="mb-3">All versions removed.</p>
+            <button
+              onClick={() => { setGenerated(false); setError(null) }}
+              className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 px-3 py-1.5 rounded-lg transition"
+            >
+              Generate again
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* ── IDEA PICKER MODAL ── */}
+      {/* Ideas picker modal — 90% screen */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 px-4"
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
           onClick={() => setModalOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
+          <div
+            className="bg-white rounded-2xl shadow-xl flex flex-col"
+            style={{ width: '90vw', height: '90vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-stone-100 shrink-0">
               <h3 className="text-base font-semibold text-stone-900">Pick an idea</h3>
-              <button onClick={() => setModalOpen(false)}
-                className="text-stone-400 hover:text-stone-600 transition text-lg leading-none">×</button>
+              <div className="flex items-center gap-2">
+                {usedCount > 0 && (
+                  <button
+                    onClick={() => { setModalShowUsed(p => !p); setModalPage(1) }}
+                    className={`text-xs px-2.5 py-1 rounded-lg border transition ${
+                      modalShowUsed
+                        ? 'bg-teal-600 border-teal-600 text-white'
+                        : 'bg-teal-50 border-teal-200 text-teal-600 hover:bg-teal-100'
+                    }`}
+                  >
+                    {modalShowUsed ? '← All ideas' : `Show used (${usedCount})`}
+                  </button>
+                )}
+                <button onClick={() => setModalOpen(false)}
+                  className="text-stone-400 hover:text-stone-600 transition text-xl leading-none ml-1">×</button>
+              </div>
             </div>
 
-            <div className="relative mb-4">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400"
-                fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-              </svg>
-              <input type="text" placeholder="Search ideas…" value={modalSearch}
-                onChange={e => setModalSearch(e.target.value)}
-                className="w-full bg-stone-50 border border-stone-200 rounded-lg pl-9 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500 placeholder-stone-400" />
+            {/* Search */}
+            <div className="px-6 pt-4 pb-3 shrink-0">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400"
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                </svg>
+                <input type="text" placeholder="Search ideas…" value={modalSearch}
+                  onChange={e => { setModalSearch(e.target.value); setModalPage(1) }}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg pl-9 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500 placeholder-stone-400" />
+              </div>
             </div>
 
-            <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
-              {filteredIdeas.length === 0 ? (
-                <p className="text-sm text-stone-400 text-center py-6">No ideas found</p>
-              ) : filteredIdeas.map(idea => (
-                <button key={idea.id}
-                  onClick={() => handleSelectIdea(idea)}
-                  className="text-left bg-stone-50 hover:bg-teal-50 border border-stone-200 hover:border-teal-300 rounded-xl px-4 py-3 transition">
-                  <p className="text-sm text-stone-800 leading-relaxed">{idea.idea}</p>
-                  {idea.note && (
-                    <p className="text-xs text-stone-400 mt-1 italic">{idea.note}</p>
-                  )}
+            {/* Ideas list */}
+            <div className="flex-1 overflow-y-auto px-6 pb-2">
+              {ideasLoading ? (
+                <p className="text-sm text-stone-400 text-center py-10">Loading…</p>
+              ) : filteredIdeas.length === 0 ? (
+                <p className="text-sm text-stone-400 text-center py-10">
+                  {modalSearch ? `No ideas match "${modalSearch}"` : 'No ideas yet'}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {modalPaginated.map(idea => {
+                    const hasTranslation = idea.inputLang !== idea.outputLang && idea.ideaTr
+                    return (
+                      <button key={idea.id}
+                        onClick={() => handleSelectIdea(idea)}
+                        className="text-left border rounded-xl px-4 py-3 transition bg-stone-50 hover:bg-teal-50 border-stone-200 hover:border-teal-300">
+                        {/* Show translation as primary if available */}
+                        {hasTranslation ? (
+                          <>
+                            <p className="text-sm text-stone-800 leading-relaxed">{idea.ideaTr}</p>
+                            <p className="text-xs text-stone-400 mt-1 leading-relaxed italic">{idea.idea}</p>
+                          </>
+                        ) : (
+                          <p className="text-sm text-stone-800 leading-relaxed">{idea.idea}</p>
+                        )}
+                        {idea.source && (
+                          <p className="text-xs text-stone-300 mt-1.5 truncate">{idea.source}</p>
+                        )}
+                        {hasTranslation && (
+                          <p className="text-xs text-stone-300 mt-1">
+                            {LANG_FLAG[idea.inputLang]} → {LANG_FLAG[idea.outputLang]}
+                          </p>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Pagination */}
+            {modalTotalPages > 1 && (
+              <div className="flex items-center justify-center gap-3 px-6 py-4 border-t border-stone-100 shrink-0">
+                <button
+                  onClick={() => setModalPage(p => Math.max(1, p - 1))}
+                  disabled={modalPage === 1}
+                  className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 px-3 py-1.5 rounded-lg transition disabled:opacity-30"
+                >
+                  ← Prev
                 </button>
-              ))}
-            </div>
+                <span className="text-xs text-stone-400">{modalPage} / {modalTotalPages}</span>
+                <button
+                  onClick={() => setModalPage(p => Math.min(modalTotalPages, p + 1))}
+                  disabled={modalPage === modalTotalPages}
+                  className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 px-3 py-1.5 rounded-lg transition disabled:opacity-30"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

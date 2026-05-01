@@ -1,88 +1,75 @@
-import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useMemo, useEffect } from 'react'
 import Layout from '../components/Layout'
-
-interface Script {
-  id: string
-  inputLang: string
-  outputLang: string
-  fullText: string        // final assembled text in output language
-  fullTextTr?: string     // translation back to input language
-  createdAt: string
-  updatedAt: string
-}
-
-const langFlag: Record<string, string> = {
-  en: '🇬🇧', ru: '🇷🇺', de: '🇩🇪', fr: '🇫🇷', es: '🇪🇸', uk: '🇺🇦',
-}
-
-const mockScripts: Script[] = [
-  {
-    id: 'sc1',
-    inputLang: 'ru',
-    outputLang: 'en',
-    fullText: `Most people waste their best hours without even knowing it.
-
-Because the moment you check your phone in the morning, your brain locks into reactive mode — responding to everyone else's agenda instead of your own.
-
-I tracked my focus for 14 days. On days I skipped the morning scroll, I finished 2x more deep work before noon.
-
-Stop checking your phone for the first 30 minutes after waking up. That window is yours — protect it.
-
-Does this sound too simple to work? Try it tomorrow and tell me.`,
-    fullTextTr: `Большинство людей тратят лучшие часы впустую, даже не осознавая этого.
-
-Потому что в момент, когда ты берёшь телефон утром, мозг переходит в реактивный режим — ты реагируешь на чужую повестку, а не свою.
-
-Я отслеживал фокус 14 дней. В дни без утреннего скроллинга я делал в 2 раза больше глубокой работы до полудня.
-
-Не трогай телефон первые 30 минут после пробуждения. Это окно — твоё. Защищай его.
-
-Звучит слишком просто? Попробуй завтра и напиши мне.`,
-    createdAt: '2026-04-11',
-    updatedAt: '2026-04-11',
-  },
-  {
-    id: 'sc2',
-    inputLang: 'ru',
-    outputLang: 'en',
-    fullText: `This one habit doubled my output — and it has nothing to do with waking up at 5am.
-
-You'd think it's some complex system. It's not.
-
-In 7 days of tracking, my anxiety dropped noticeably and I finished 3 projects I'd been avoiding for months.
-
-The habit: no phone for the first 30 minutes of the day. That's it.
-
-What's your morning ritual? Drop it below 👇`,
-    fullTextTr: `Эта одна привычка удвоила мою продуктивность — и она не связана с подъёмом в 5 утра.
-
-Можно подумать, что это сложная система. Нет.
-
-За 7 дней наблюдений тревога заметно спала, и я закрыл 3 проекта, которые откладывал месяцами.
-
-Привычка: первые 30 минут без телефона. Всё.
-
-Какой у тебя утренний ритуал? Пиши ниже 👇`,
-    createdAt: '2026-04-12',
-    updatedAt: '2026-04-13',
-  },
-]
+import { useAuth } from '../context/AuthContext'
+import { fetchScripts, updateScript, deleteScript, type ScriptResponse } from '../api/scripts'
+import { LANG_FLAG } from '../data/languages'
 
 export default function ScriptsPage() {
-  const navigate = useNavigate()
-  const [scripts, setScripts] = useState<Script[]>(mockScripts)
+  const { token } = useAuth()
+
+  const [scripts, setScripts] = useState<ScriptResponse[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editDraft, setEditDraft] = useState<ScriptResponse | null>(null)
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 10
+
+  useEffect(() => {
+    if (!token) return
+    fetchScripts(token)
+      .then(setScripts)
+      .catch(() => setError('Failed to load scripts.'))
+      .finally(() => setLoading(false))
+  }, [token])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
     if (!q) return scripts
-    return scripts.filter(s => s.fullText.toLowerCase().includes(q))
+    return scripts.filter(s =>
+      (s.name ?? '').toLowerCase().includes(q) ||
+      s.fullText.toLowerCase().includes(q)
+    )
   }, [scripts, search])
 
-  const handleDelete = (id: string) => {
-    setScripts(prev => prev.filter(s => s.id !== id))
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const handleEdit = (script: ScriptResponse) => {
+    setEditingId(script.id)
+    setEditDraft({ ...script })
   }
+
+  const handleSave = async () => {
+    if (!editDraft || !token) return
+    try {
+      const updated = await updateScript(editDraft.id, editDraft.name ?? '', editDraft.fullText, token)
+      setScripts(prev => prev.map(s => s.id === updated.id ? updated : s))
+      setEditingId(null)
+      setEditDraft(null)
+    } catch {
+      setError('Failed to save. Please try again.')
+    }
+  }
+
+  const handleCancel = () => {
+    setEditingId(null)
+    setEditDraft(null)
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!token) return
+    try {
+      await deleteScript(id, token)
+      setScripts(prev => prev.filter(s => s.id !== id))
+      if (editingId === id) { setEditingId(null); setEditDraft(null) }
+    } catch {
+      setError('Failed to delete. Please try again.')
+    }
+  }
+
+  const showTr = (s: ScriptResponse) => s.inputLang !== s.outputLang
 
   return (
     <Layout breadcrumbs={[{ label: 'Scripts' }]}>
@@ -90,7 +77,7 @@ export default function ScriptsPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-stone-900 mb-1">Scripts</h1>
           <p className="text-stone-400 text-sm">
-            AI-powered scripts for your short-form videos. Hook → Body → CTA.
+            AI-powered scripts for your short-form videos. Hook → Bridge → Value → CTA.
           </p>
         </div>
 
@@ -102,11 +89,15 @@ export default function ScriptsPage() {
               d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
           </svg>
           <input type="text" placeholder="Search scripts…" value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
             className="w-full bg-white border border-stone-200 rounded-lg pl-9 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent placeholder-stone-400 transition" />
         </div>
 
-        {filtered.length === 0 ? (
+        {error && <p className="text-xs text-red-500 mb-4">{error}</p>}
+
+        {loading ? (
+          <div className="text-center py-24 text-stone-300 text-sm">Loading…</div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-24 text-stone-400">
             {search
               ? <p className="text-sm">No scripts match "{search}"</p>
@@ -117,55 +108,95 @@ export default function ScriptsPage() {
             }
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            {filtered.map(script => (
+          <div className="flex flex-col gap-2">
+            {paginated.map(script => (
               <div key={script.id}
-                className="bg-white border border-stone-200 rounded-xl px-5 py-4 hover:border-stone-300 transition">
-                <div className="flex items-start gap-4">
-                  <div className="flex-1 min-w-0">
-                    {/* Full script text */}
-                    <p className="text-sm text-stone-800 leading-relaxed whitespace-pre-line">
-                      {script.fullText}
-                    </p>
-                    {/* Translation */}
-                    {script.inputLang !== script.outputLang && script.fullTextTr && (
-                      <p className="text-xs text-stone-400 leading-relaxed whitespace-pre-line mt-3 italic">
-                        {script.fullTextTr}
-                      </p>
-                    )}
-                    {/* Meta */}
-                    <div className="flex items-center gap-2 mt-3">
-                      <span className="text-xs text-stone-300">
-                        {script.updatedAt}
-                      </span>
-                      {script.inputLang !== script.outputLang && (
-                        <span className="text-xs text-stone-300">
-                          · {langFlag[script.inputLang]} → {langFlag[script.outputLang]}
-                        </span>
-                      )}
+                className="bg-white border border-stone-200 rounded-xl px-5 py-4 transition hover:border-stone-300">
+
+                {editingId === script.id && editDraft ? (
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Name</label>
+                      <input
+                        type="text"
+                        value={editDraft.name ?? ''}
+                        onChange={e => setEditDraft({ ...editDraft, name: e.target.value })}
+                        className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Script</label>
+                      <textarea
+                        value={editDraft.fullText}
+                        onChange={e => setEditDraft({ ...editDraft, fullText: e.target.value })}
+                        rows={8}
+                        className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500 resize-none" />
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={handleCancel}
+                        className="text-xs text-stone-400 hover:text-stone-600 px-3 py-1.5 rounded-lg border border-stone-200 transition">
+                        Cancel
+                      </button>
+                      <button onClick={handleSave}
+                        className="text-xs bg-teal-600 hover:bg-teal-500 text-white font-semibold px-3 py-1.5 rounded-lg transition">
+                        Save
+                      </button>
                     </div>
                   </div>
-
-                  {/* Actions */}
-                  <div className="flex flex-col gap-1.5 shrink-0">
-                    <button
-                      onClick={() => navigate(`/scripts/${script.id}`)}
-                      title="Edit"
-                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-stone-100 hover:bg-teal-50 hover:text-teal-600 text-stone-400 transition text-xs"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      onClick={() => handleDelete(script.id)}
-                      title="Delete"
-                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-stone-100 hover:bg-red-50 hover:text-red-500 text-stone-400 transition text-xs"
-                    >
-                      🗑
-                    </button>
+                ) : (
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1 min-w-0">
+                      {script.name && (
+                        <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">
+                          {script.name}
+                        </p>
+                      )}
+                      <p className="text-sm text-stone-800 leading-relaxed whitespace-pre-line">
+                        {script.fullText}
+                      </p>
+                      {showTr(script) && script.fullTextTr && (
+                        <p className="text-xs text-stone-400 leading-relaxed whitespace-pre-line mt-3 italic">
+                          {script.fullTextTr}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 mt-3">
+                        <span className="text-xs text-stone-300">
+                          {script.updatedAt?.slice(0, 10)}
+                        </span>
+                        {showTr(script) && (
+                          <span className="text-xs text-stone-300">
+                            · {LANG_FLAG[script.inputLang]} → {LANG_FLAG[script.outputLang]}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0 mt-0.5">
+                      <button onClick={() => handleDelete(script.id)} title="Delete"
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-stone-100 hover:bg-red-50 hover:text-red-500 text-stone-400 transition text-xs">
+                        🗑
+                      </button>
+                      <button onClick={() => handleEdit(script)} title="Edit"
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-stone-100 hover:bg-teal-50 hover:text-teal-600 text-stone-400 transition text-xs">
+                        ✏️
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ))}
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-3 mt-6">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+              className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 px-3 py-1.5 rounded-lg transition disabled:opacity-30">
+              ← Prev
+            </button>
+            <span className="text-xs text-stone-400">{page} / {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+              className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 px-3 py-1.5 rounded-lg transition disabled:opacity-30">
+              Next →
+            </button>
           </div>
         )}
       </div>

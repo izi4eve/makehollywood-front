@@ -14,6 +14,7 @@ export interface IdeaResponse {
   ideaTr?: string
   inputLang: string
   outputLang: string
+  used: boolean
   createdAt: string
 }
 
@@ -72,6 +73,19 @@ export async function updateIdea(
     body: JSON.stringify({ source, idea }),
   }, token)
   if (!res.ok) throw new Error('Failed to update idea')
+  return res.json()
+}
+
+export async function markIdeaUsed(
+  id: number,
+  used: boolean,
+  token: string
+): Promise<IdeaResponse> {
+  const res = await apiFetch(`${API}/${id}/used`, {
+    method: 'PATCH',
+    body: JSON.stringify({ used }),
+  }, token)
+  if (!res.ok) throw new Error('Failed to mark idea')
   return res.json()
 }
 
