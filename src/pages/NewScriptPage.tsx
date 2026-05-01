@@ -15,7 +15,6 @@ interface Variant {
   name?: string
   instruction: string
   refining: boolean
-  saved: boolean
   parentId?: string   // which variant triggered refine
 }
 
@@ -50,9 +49,7 @@ function VariantCard({
   const [text, setText] = useState(variant.text)
 
   return (
-    <div ref={cardRef} className={`bg-white border rounded-xl overflow-hidden transition ${
-      variant.saved ? 'border-green-300' : 'border-stone-200'
-    }`}>
+    <div ref={cardRef} className="bg-white border border-stone-200 rounded-xl overflow-hidden transition">
 
       {/* Version label */}
       <div className="px-5 pt-3 pb-0">
@@ -119,16 +116,12 @@ function VariantCard({
         >
           Remove
         </button>
-        {variant.saved ? (
-          <span className="text-xs text-green-600 font-medium">✓ Saved</span>
-        ) : (
-          <button
-            onClick={() => onSave(variant, text)}
-            className="text-xs font-semibold px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-400 text-white transition"
-          >
-            Save this version
-          </button>
-        )}
+        <button
+          onClick={() => onSave(variant, text)}
+          className="text-xs font-semibold px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-400 text-white transition"
+        >
+          Save this version
+        </button>
       </div>
     </div>
   )
@@ -173,7 +166,7 @@ export default function NewScriptPage() {
     setIdeasLoading(true)
     fetchIdeas(token)
       .then(setIdeas)
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setIdeasLoading(false))
   }, [modalOpen, token])
 
@@ -207,7 +200,6 @@ export default function NewScriptPage() {
         name: r.name ?? '',
         instruction: '',
         refining: false,
-        saved: false,
       })))
       setGenerated(true)
     } catch (e: unknown) {
@@ -236,7 +228,6 @@ export default function NewScriptPage() {
         name: variant.name,
         instruction: '',
         refining: false,
-        saved: false,
         parentId: id,
       }
       // Insert right after parent
@@ -273,7 +264,6 @@ export default function NewScriptPage() {
         outputLang,
         token
       )
-      // Mark as saved but stay on page
       setVariants(prev => prev.filter(v => v.id !== variant.id))
     } catch {
       setError('Failed to save. Please try again.')
@@ -289,7 +279,7 @@ export default function NewScriptPage() {
     if (token && !idea.used) {
       markIdeaUsed(idea.id, true, token)
         .then(updated => setIdeas(prev => prev.map(i => i.id === updated.id ? updated : i)))
-        .catch(() => {})
+        .catch(() => { })
     }
   }
 
@@ -304,8 +294,6 @@ export default function NewScriptPage() {
   const updateName = (id: string, value: string) => {
     setVariants(prev => prev.map(v => v.id === id ? { ...v, name: value } : v))
   }
-
-  const savedCount = variants.filter(v => v.saved).length
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -392,24 +380,14 @@ export default function NewScriptPage() {
         {/* Generated variants */}
         {generated && variants.length > 0 && (
           <div>
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="text-base font-semibold text-stone-900 mb-1">
-                  {variants.length} script{variants.length > 1 ? 's' : ''}, ready to use
-                </h2>
-                <p className="text-xs text-stone-400">
-                  Edit directly, or describe what to change and hit Apply — refined version appears right after.
-                  Save whichever versions you like.
-                </p>
-              </div>
-              {savedCount > 0 && (
-                <button
-                  onClick={() => navigate('/scripts')}
-                  className="text-xs font-semibold px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-400 text-white transition whitespace-nowrap ml-4"
-                >
-                  → Go to Scripts ({savedCount})
-                </button>
-              )}
+            <div className="mb-5">
+              <h2 className="text-base font-semibold text-stone-900 mb-1">
+                {variants.length} script{variants.length > 1 ? 's' : ''}, ready to use
+              </h2>
+              <p className="text-xs text-stone-400">
+                Edit directly, or describe what to change and hit Apply — refined version appears right after.
+                Save whichever versions you like.
+              </p>
             </div>
 
             <div className="flex flex-col gap-6 pb-16">
@@ -460,11 +438,10 @@ export default function NewScriptPage() {
                 {usedCount > 0 && (
                   <button
                     onClick={() => { setModalShowUsed(p => !p); setModalPage(1) }}
-                    className={`text-xs px-2.5 py-1 rounded-lg border transition ${
-                      modalShowUsed
-                        ? 'bg-teal-600 border-teal-600 text-white'
-                        : 'bg-teal-50 border-teal-200 text-teal-600 hover:bg-teal-100'
-                    }`}
+                    className={`text-xs px-2.5 py-1 rounded-lg border transition ${modalShowUsed
+                      ? 'bg-teal-600 border-teal-600 text-white'
+                      : 'bg-teal-50 border-teal-200 text-teal-600 hover:bg-teal-100'
+                      }`}
                   >
                     {modalShowUsed ? '← All ideas' : `Show used (${usedCount})`}
                   </button>
@@ -504,7 +481,6 @@ export default function NewScriptPage() {
                       <button key={idea.id}
                         onClick={() => handleSelectIdea(idea)}
                         className="text-left border rounded-xl px-4 py-3 transition bg-stone-50 hover:bg-teal-50 border-stone-200 hover:border-teal-300">
-                        {/* Show translation as primary if available */}
                         {hasTranslation ? (
                           <>
                             <p className="text-sm text-stone-800 leading-relaxed">{idea.ideaTr}</p>
