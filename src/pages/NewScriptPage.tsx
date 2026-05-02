@@ -15,7 +15,7 @@ interface Variant {
   name?: string
   instruction: string
   refining: boolean
-  parentId?: string   // which variant triggered refine
+  parentId?: string
 }
 
 const PLACEHOLDERS = [
@@ -28,6 +28,19 @@ const PLACEHOLDERS = [
 ]
 
 const MODAL_PAGE_SIZE = 8
+
+const STYLE_OPTIONS = [
+  { value: 'story', label: 'Story', hint: 'Personal narrative. Emotion builds slowly.' },
+  { value: 'flow', label: 'Flow', hint: 'Smooth and natural. Easy to follow.' },
+  { value: 'expert', label: 'Expert', hint: 'Authoritative. Facts, specifics, no fluff.' },
+  { value: 'edge', label: 'Edge', hint: 'Provocative. Contrarian, dry wit.' },
+  { value: 'spark', label: 'Spark', hint: 'Hits hard from the first line. Short punches, escalating.' },
+]
+
+const VOICE_OPTIONS = [
+  { value: 'direct', label: 'Talk to the viewer' },
+  { value: 'neutral', label: 'Impersonal fact' },
+]
 
 // ── Variant card ──────────────────────────────────────────────────────────────
 
@@ -51,12 +64,10 @@ function VariantCard({
   return (
     <div ref={cardRef} className="bg-white border border-stone-200 rounded-xl overflow-hidden transition">
 
-      {/* Version label */}
       <div className="px-5 pt-3 pb-0">
         <p className="text-[10px] text-stone-300 uppercase tracking-widest">Version {index + 1}</p>
       </div>
 
-      {/* Name field */}
       <div className="px-5 pt-2 pb-2">
         <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Name</label>
         <input
@@ -68,13 +79,12 @@ function VariantCard({
         />
       </div>
 
-      {/* Script text */}
       <div className="px-5 pb-3">
         <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Script</label>
         <textarea
           value={text}
           onChange={e => setText(e.target.value)}
-          rows={7}
+          rows={3}
           className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2.5 text-sm text-stone-800 leading-relaxed outline-none resize-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition"
         />
         {showTr && variant.tr && (
@@ -84,7 +94,6 @@ function VariantCard({
         )}
       </div>
 
-      {/* Refine field */}
       <div className="border-t border-stone-100 px-5 py-3 bg-stone-50/60">
         <div className="flex gap-2 items-start">
           <textarea
@@ -108,7 +117,6 @@ function VariantCard({
         </p>
       </div>
 
-      {/* Actions */}
       <div className="border-t border-stone-100 px-5 py-3 flex items-center justify-between">
         <button
           onClick={() => onDelete(variant.id)}
@@ -140,16 +148,31 @@ export default function NewScriptPage() {
   const [source, setSource] = useState('')
   const [coreMessage, setCoreMessage] = useState('')
 
+  // Style & voice — persisted in localStorage
+  const [style, setStyle] = useState<string>(() =>
+    localStorage.getItem('scriptStyle') ?? 'flow'
+  )
+  const [voice, setVoice] = useState<string>(() =>
+    localStorage.getItem('scriptVoice') ?? 'neutral'
+  )
+
+  const handleStyleChange = (v: string) => {
+    setStyle(v)
+    localStorage.setItem('scriptStyle', v)
+  }
+  const handleVoiceChange = (v: string) => {
+    setVoice(v)
+    localStorage.setItem('scriptVoice', v)
+  }
+
   const [generating, setGenerating] = useState(false)
   const [generated, setGenerated] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [variants, setVariants] = useState<Variant[]>([])
 
-  // refs for auto-scroll to refined variant
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
-  // Ideas picker modal
   const [modalShowUsed, setModalShowUsed] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [modalSearch, setModalSearch] = useState('')
@@ -192,7 +215,7 @@ export default function NewScriptPage() {
     setGenerated(false)
     setVariants([])
     try {
-      const results = await generateScripts(source, coreMessage, inputLang, outputLang, token)
+      const results = await generateScripts(source, coreMessage, inputLang, outputLang, token, style, voice)
       setVariants(results.map((r, i) => ({
         id: `v${i}-${Date.now()}`,
         text: r.text,
@@ -230,14 +253,12 @@ export default function NewScriptPage() {
         refining: false,
         parentId: id,
       }
-      // Insert right after parent
       setVariants(prev => {
         const updated = prev.map(v => v.id === id ? { ...v, refining: false, instruction: '' } : v)
         const idx = updated.findIndex(v => v.id === id)
         updated.splice(idx + 1, 0, newVariant)
         return [...updated]
       })
-      // Scroll to new variant after render
       setTimeout(() => {
         cardRefs.current[newId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 100)
@@ -255,14 +276,8 @@ export default function NewScriptPage() {
     if (!token) return
     try {
       await saveScript(
-        source,
-        coreMessage,
-        variant.name ?? '',
-        text,
-        variant.tr,
-        inputLang,
-        outputLang,
-        token
+        source, coreMessage, variant.name ?? '', text,
+        variant.tr, inputLang, outputLang, token
       )
       setVariants(prev => prev.filter(v => v.id !== variant.id))
     } catch {
@@ -294,6 +309,8 @@ export default function NewScriptPage() {
   const updateName = (id: string, value: string) => {
     setVariants(prev => prev.map(v => v.id === id ? { ...v, name: value } : v))
   }
+
+  const currentStyleHint = STYLE_OPTIONS.find(s => s.value === style)?.hint
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -355,6 +372,37 @@ export default function NewScriptPage() {
                 placeholder="The core insight — problem + solution or pain + advice"
                 rows={2}
                 className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition resize-none placeholder-stone-400" />
+            </div>
+
+            {/* Style & Voice selectors */}
+            <div className="flex items-start gap-3 pt-1">
+              <div className="flex-1">
+                <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Style</label>
+                <select
+                  value={style}
+                  onChange={e => handleStyleChange(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition cursor-pointer"
+                >
+                  {STYLE_OPTIONS.map(s => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+                {currentStyleHint && (
+                  <p className="text-[11px] text-stone-400 italic mt-1">{currentStyleHint}</p>
+                )}
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Voice</label>
+                <select
+                  value={voice}
+                  onChange={e => handleVoiceChange(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition cursor-pointer"
+                >
+                  {VOICE_OPTIONS.map(v => (
+                    <option key={v.value} value={v.value}>{v.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -422,7 +470,7 @@ export default function NewScriptPage() {
         )}
       </div>
 
-      {/* Ideas picker modal — 90% screen */}
+      {/* Ideas picker modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
           onClick={() => setModalOpen(false)}>
@@ -431,7 +479,6 @@ export default function NewScriptPage() {
             style={{ width: '90vw', height: '90vh' }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Modal header */}
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-stone-100 shrink-0">
               <h3 className="text-base font-semibold text-stone-900">Pick an idea</h3>
               <div className="flex items-center gap-2">
@@ -451,7 +498,6 @@ export default function NewScriptPage() {
               </div>
             </div>
 
-            {/* Search */}
             <div className="px-6 pt-4 pb-3 shrink-0">
               <div className="relative">
                 <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400"
@@ -465,7 +511,6 @@ export default function NewScriptPage() {
               </div>
             </div>
 
-            {/* Ideas list */}
             <div className="flex-1 overflow-y-auto px-6 pb-2">
               {ideasLoading ? (
                 <p className="text-sm text-stone-400 text-center py-10">Loading…</p>
@@ -504,7 +549,6 @@ export default function NewScriptPage() {
               )}
             </div>
 
-            {/* Pagination */}
             {modalTotalPages > 1 && (
               <div className="flex items-center justify-center gap-3 px-6 py-4 border-t border-stone-100 shrink-0">
                 <button

@@ -24,12 +24,14 @@ export async function generateScripts(
   coreMessage: string,
   inputLang: string,
   outputLang: string,
-  token: string
+  token: string,
+  style?: string,   // добавить
+  voice?: string    // добавить
 ): Promise<GeneratedVariant[]> {
   const res = await apiFetch('/api/scripts/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source, coreMessage, inputLang, outputLang }),
+    body: JSON.stringify({ source, coreMessage, inputLang, outputLang, style, voice }),
   }, token)
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
