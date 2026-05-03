@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import { useAuth } from '../context/AuthContext'
@@ -16,58 +16,75 @@ const MODAL_PAGE_SIZE = 8
 // We play them inline via Audio() — no backend call needed.
 const EDGE_VOICES: Record<string, { name: string; label: string; previewUrl: string }[]> = {
   ru: [
-    { name: 'ru-RU-SvetlanaNeural',  label: 'Svetlana (F)',  previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=ru-RU-SvetlanaNeural&text=Привет!+Рад+вас+слышать.' },
-    { name: 'ru-RU-DmitryNeural',    label: 'Dmitry (M)',    previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=ru-RU-DmitryNeural&text=Привет!+Рад+вас+слышать.' },
-    { name: 'ru-RU-DariyaNeural',    label: 'Dariya (F)',    previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=ru-RU-DariyaNeural&text=Привет!+Рад+вас+слышать.' },
+    { name: 'ru-RU-SvetlanaNeural', label: 'Svetlana (F)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=ru-RU-SvetlanaNeural&text=Привет!+Рад+вас+слышать.' },
+    { name: 'ru-RU-DmitryNeural', label: 'Dmitry (M)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=ru-RU-DmitryNeural&text=Привет!+Рад+вас+слышать.' },
+    { name: 'ru-RU-DariyaNeural', label: 'Dariya (F)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=ru-RU-DariyaNeural&text=Привет!+Рад+вас+слышать.' },
   ],
   es: [
-    { name: 'es-ES-ElviraNeural',    label: 'Elvira (F)',    previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=es-ES-ElviraNeural&text=Hola,+¿cómo+estás?' },
-    { name: 'es-ES-AlvaroNeural',    label: 'Alvaro (M)',    previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=es-ES-AlvaroNeural&text=Hola,+¿cómo+estás?' },
+    { name: 'es-ES-ElviraNeural', label: 'Elvira (F)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=es-ES-ElviraNeural&text=Hola,+¿cómo+estás?' },
+    { name: 'es-ES-AlvaroNeural', label: 'Alvaro (M)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=es-ES-AlvaroNeural&text=Hola,+¿cómo+estás?' },
   ],
   pt: [
     { name: 'pt-BR-FranciscaNeural', label: 'Francisca (F)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=pt-BR-FranciscaNeural&text=Olá,+como+vai?' },
-    { name: 'pt-BR-AntonioNeural',   label: 'Antonio (M)',   previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=pt-BR-AntonioNeural&text=Olá,+como+vai?' },
+    { name: 'pt-BR-AntonioNeural', label: 'Antonio (M)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=pt-BR-AntonioNeural&text=Olá,+como+vai?' },
   ],
   fr: [
-    { name: 'fr-FR-DeniseNeural',    label: 'Denise (F)',    previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=fr-FR-DeniseNeural&text=Bonjour,+comment+allez-vous?' },
-    { name: 'fr-FR-HenriNeural',     label: 'Henri (M)',     previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=fr-FR-HenriNeural&text=Bonjour,+comment+allez-vous?' },
+    { name: 'fr-FR-DeniseNeural', label: 'Denise (F)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=fr-FR-DeniseNeural&text=Bonjour,+comment+allez-vous?' },
+    { name: 'fr-FR-HenriNeural', label: 'Henri (M)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=fr-FR-HenriNeural&text=Bonjour,+comment+allez-vous?' },
   ],
   de: [
-    { name: 'de-DE-KatjaNeural',     label: 'Katja (F)',     previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=de-DE-KatjaNeural&text=Hallo,+wie+geht+es+Ihnen?' },
-    { name: 'de-DE-ConradNeural',    label: 'Conrad (M)',    previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=de-DE-ConradNeural&text=Hallo,+wie+geht+es+Ihnen?' },
+    { name: 'de-DE-KatjaNeural', label: 'Katja (F)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=de-DE-KatjaNeural&text=Hallo,+wie+geht+es+Ihnen?' },
+    { name: 'de-DE-ConradNeural', label: 'Conrad (M)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=de-DE-ConradNeural&text=Hallo,+wie+geht+es+Ihnen?' },
   ],
   uk: [
-    { name: 'uk-UA-PolinaNeural',    label: 'Polina (F)',    previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=uk-UA-PolinaNeural&text=Привіт!+Як+справи?' },
-    { name: 'uk-UA-OstapNeural',     label: 'Ostap (M)',     previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=uk-UA-OstapNeural&text=Привіт!+Як+справи?' },
+    { name: 'uk-UA-PolinaNeural', label: 'Polina (F)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=uk-UA-PolinaNeural&text=Привіт!+Як+справи?' },
+    { name: 'uk-UA-OstapNeural', label: 'Ostap (M)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=uk-UA-OstapNeural&text=Привіт!+Як+справи?' },
   ],
   hi: [
-    { name: 'hi-IN-SwaraNeural',     label: 'Swara (F)',     previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=hi-IN-SwaraNeural&text=नमस्ते,+आप+कैसे+हैं?' },
-    { name: 'hi-IN-MadhurNeural',    label: 'Madhur (M)',    previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=hi-IN-MadhurNeural&text=नमस्ते,+आप+कैसे+हैं?' },
+    { name: 'hi-IN-SwaraNeural', label: 'Swara (F)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=hi-IN-SwaraNeural&text=नमस्ते,+आप+कैसे+हैं?' },
+    { name: 'hi-IN-MadhurNeural', label: 'Madhur (M)', previewUrl: 'https://ttsdemo.microsoft.com/api/TTS?voice=hi-IN-MadhurNeural&text=नमस्ते,+आप+कैसे+हैं?' },
   ],
 }
 
 // Orpheus voices for English
 const ORPHEUS_VOICES = [
-  { name: 'tara',  label: 'Tara (F)' },
-  { name: 'leah',  label: 'Leah (F)' },
-  { name: 'jess',  label: 'Jess (F)' },
-  { name: 'leo',   label: 'Leo (M)' },
-  { name: 'dan',   label: 'Dan (M)' },
-  { name: 'mia',   label: 'Mia (F)' },
-  { name: 'zac',   label: 'Zac (M)' },
-  { name: 'zoe',   label: 'Zoe (F)' },
+  { name: 'autumn', label: 'Autumn (F)' },
+  { name: 'diana', label: 'Diana (F)' },
+  { name: 'hannah', label: 'Hannah (F)' },
+  { name: 'austin', label: 'Austin (M)' },
+  { name: 'daniel', label: 'Daniel (M)' },
+  { name: 'troy', label: 'Troy (M)' },
+]
+
+const ORPHEUS_TONES: { value: string; label: string; tag: string }[] = [
+  { value: 'default', label: 'Default', tag: '' },
+  { value: 'cheerful', label: 'Cheerful', tag: '[cheerful] ' },
+  { value: 'serious', label: 'Serious', tag: '[serious] ' },
+  { value: 'calm', label: 'Calm', tag: '[calm] ' },
+  { value: 'excited', label: 'Excited', tag: '[excited] ' },
+  { value: 'whispering', label: 'Whispering', tag: '[whispering] ' },
 ]
 
 const EDGE_STYLES = ['Default', 'Cheerful', 'Serious', 'Calm', 'Empathetic', 'Newscast']
 
+const PREVIEW_TEXT: Record<string, string> = {
+  ru: 'Это пример выбранного голоса и стиля.',
+  es: 'Esta es una vista previa de la voz y el estilo seleccionados.',
+  pt: 'Esta é uma prévia da voz e do estilo selecionados.',
+  fr: 'Ceci est un aperçu de la voix et du style sélectionnés.',
+  de: 'Dies ist eine Vorschau der ausgewählten Stimme und des Stils.',
+  uk: 'Це приклад вибраного голосу та стилю.',
+  hi: 'यह चुनी हुई आवाज़ और शैली का पूर्वावलोकन है।',
+}
+
 const LS = {
-  lang:          'voiceLang',
-  edgeVoice:     'voiceEdgeVoice',
-  edgeStyle:     'voiceEdgeStyle',
-  edgeSpeed:     'voiceEdgeSpeed',
-  edgePitch:     'voiceEdgePitch',
-  orpheusVoice:  'voiceOrpheusVoice',
-  orpheusTemp:   'voiceOrpheusTemp',
+  lang: 'voiceLang',
+  edgeVoice: 'voiceEdgeVoice',
+  edgeStyle: 'voiceEdgeStyle',
+  edgeSpeed: 'voiceEdgeSpeed',
+  edgePitch: 'voiceEdgePitch',
+  orpheusVoice: 'voiceOrpheusVoice',
+  orpheusTone: 'voiceOrpheusTone',
 }
 
 function ls<T>(key: string, fallback: T): T {
@@ -105,12 +122,12 @@ export default function VoicePage() {
   const isEnglish = lang === 'en'
 
   // Step 3 — voice settings
-  const [edgeVoice, setEdgeVoice]   = useState<string>(() => ls(LS.edgeVoice, ''))
-  const [edgeStyle, setEdgeStyle]   = useState<string>(() => ls(LS.edgeStyle, 'Default'))
-  const [edgeSpeed, setEdgeSpeed]   = useState<number>(() => ls(LS.edgeSpeed, 100))
-  const [edgePitch, setEdgePitch]   = useState<number>(() => ls(LS.edgePitch, 0))
-  const [orpheusVoice, setOrpheusVoice] = useState<string>(() => ls(LS.orpheusVoice, 'tara'))
-  const [orpheusTemp, setOrpheusTemp]   = useState<number>(() => ls(LS.orpheusTemp, 70))
+  const [edgeVoice, setEdgeVoice] = useState<string>(() => ls(LS.edgeVoice, ''))
+  const [edgeStyle, setEdgeStyle] = useState<string>(() => ls(LS.edgeStyle, 'Default'))
+  const [edgeSpeed, setEdgeSpeed] = useState<number>(() => ls(LS.edgeSpeed, 100))
+  const [edgePitch, setEdgePitch] = useState<number>(() => ls(LS.edgePitch, 0))
+  const [orpheusVoice, setOrpheusVoice] = useState<string>(() => ls(LS.orpheusVoice, 'autumn'))
+  const [orpheusTone, setOrpheusTone] = useState<string>(() => ls(LS.orpheusTone, 'default'))
 
   const [previewing, setPreviewing] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -134,7 +151,7 @@ export default function VoicePage() {
     setListsLoading(true)
     Promise.all([fetchScripts(token), fetchLongforms(token)])
       .then(([s, lf]) => { setScripts(s); setLongforms(lf) })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setListsLoading(false))
   }, [modalOpen, token])
 
@@ -200,13 +217,12 @@ export default function VoicePage() {
   const handleEdgeSpeedChange = (v: number) => { setEdgeSpeed(v); lsSet(LS.edgeSpeed, v) }
   const handleEdgePitchChange = (v: number) => { setEdgePitch(v); lsSet(LS.edgePitch, v) }
   const handleOrpheusVoiceChange = (v: string) => { setOrpheusVoice(v); lsSet(LS.orpheusVoice, v) }
-  const handleOrheusTempChange = (v: number) => { setOrpheusTemp(v); lsSet(LS.orpheusTemp, v) }
+  const handleOrpheusToneChange = (v: string) => { setOrpheusTone(v); lsSet(LS.orpheusTone, v) }
 
-  // Preview: play pre-generated Orpheus sample (voice + expressiveness step)
+  // Preview: play pre-generated Orpheus sample (voice + tone)
   const handleOrpheusPreview = () => {
     setPreviewing(true)
-    const tempLabel = (orpheusTemp / 10).toFixed(1)
-    const url = `/voice-samples/orpheus/${orpheusVoice}_${tempLabel}.mp3`
+    const url = `/voice-samples/orpheus/${orpheusVoice}_${orpheusTone}.wav`
     const audio = new Audio(url)
     audio.onended = () => setPreviewing(false)
     audio.onerror = () => setPreviewing(false)
@@ -214,16 +230,49 @@ export default function VoicePage() {
   }
 
   // Preview: play Microsoft's sample audio for the selected Edge voice
-  const handlePreview = () => {
-    if (isEnglish || !effectiveEdgeVoice) return
+  const previewCache = useRef<Record<string, string>>({})
+
+  const handlePreview = async () => {
+    if (isEnglish || !effectiveEdgeVoice || !token) return
+
+    const cacheKey = `${lang}_${effectiveEdgeVoice.name}_${edgeStyle}`
+    if (previewCache.current[cacheKey]) {
+      setPreviewing(true)
+      const audio = new Audio(previewCache.current[cacheKey])
+      audio.onended = () => setPreviewing(false)
+      audio.onerror = () => setPreviewing(false)
+      audio.play()
+      return
+    }
+
     setPreviewing(true)
-    const audio = new Audio(effectiveEdgeVoice.previewUrl)
-    audio.onended = () => setPreviewing(false)
-    audio.onerror = () => {
+    setError(null)
+    try {
+      const res = await fetch('/api/voice/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          engine: 'edge',
+          text: PREVIEW_TEXT[lang] ?? 'This is a preview of the selected voice and tone.',
+          lang,
+          voice: effectiveEdgeVoice.name,
+          style: edgeStyle,
+          speed: edgeSpeed / 100,
+          pitch: edgePitch,
+        }),
+      })
+      if (!res.ok) throw new Error('preview_failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      previewCache.current[cacheKey] = url
+      const audio = new Audio(url)
+      audio.onended = () => setPreviewing(false)
+      audio.onerror = () => setPreviewing(false)
+      audio.play()
+    } catch {
       setPreviewing(false)
       setError('Preview unavailable. Try generating a short sample.')
     }
-    audio.play().catch(() => setPreviewing(false))
   }
 
   const handleGenerate = async () => {
@@ -231,8 +280,9 @@ export default function VoicePage() {
     setGenerating(true)
     setError(null)
     try {
+      const toneTag = ORPHEUS_TONES.find(t => t.value === orpheusTone)?.tag ?? ''
       const payload = isEnglish
-        ? { text: text.trim(), lang, engine: 'orpheus', voice: orpheusVoice, temperature: orpheusTemp / 10 }
+        ? { text: toneTag + text.trim(), lang, engine: 'orpheus', voice: orpheusVoice }
         : { text: text.trim(), lang, engine: 'edge', voice: effectiveEdgeVoice?.name, style: edgeStyle, speed: edgeSpeed / 100, pitch: edgePitch }
 
       const res = await fetch('/api/voice/generate', {
@@ -246,12 +296,14 @@ export default function VoicePage() {
         throw new Error(data.error ?? 'generation_failed')
       }
 
-      // Stream the MP3 blob straight to download
+      // Stream the WAV blob straight to download
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `voiceover-${Date.now()}.mp3`
+      a.download = isEnglish
+        ? `voiceover-${Date.now()}.wav`
+        : `voiceover-${Date.now()}.mp3`
       a.click()
       URL.revokeObjectURL(url)
     } catch (e: unknown) {
@@ -350,18 +402,16 @@ export default function VoicePage() {
                     </select>
                   </div>
                   <div className="flex-1">
-                    <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">
-                      Expressiveness · {(orpheusTemp / 10).toFixed(1)}
-                    </label>
-                    <input
-                      type="range" min={1} max={10} step={1}
-                      value={orpheusTemp}
-                      onChange={e => handleOrheusTempChange(Number(e.target.value))}
-                      className="w-full mt-2"
-                    />
-                    <div className="flex justify-between text-[10px] text-stone-300 mt-0.5">
-                      <span>0.1</span><span>1.0</span>
-                    </div>
+                    <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Tone</label>
+                    <select
+                      value={orpheusTone}
+                      onChange={e => handleOrpheusToneChange(e.target.value)}
+                      className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition cursor-pointer"
+                    >
+                      {ORPHEUS_TONES.map(t => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 pt-4 border-t border-stone-100">
@@ -438,7 +488,7 @@ export default function VoicePage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 pt-1 border-t border-stone-100">
+                <div className="flex items-center gap-3 pt-4 border-t border-stone-100">
                   <button
                     onClick={handlePreview}
                     disabled={previewing || !effectiveEdgeVoice}
@@ -461,7 +511,7 @@ export default function VoicePage() {
               disabled={!step4Active || !text.trim() || generating}
               className="w-full bg-orange-500 hover:bg-orange-400 disabled:opacity-40 text-white text-sm font-semibold py-3 rounded-xl transition"
             >
-              {generating ? 'Generating voiceover…' : 'Generate voiceover & download MP3'}
+              {generating ? 'Generating voiceover…' : 'Generate voiceover & download file'}
             </button>
             <p className="text-[11px] text-stone-400 mt-3 leading-relaxed">
               The file will download to your computer. Save it to your project folder —
@@ -499,11 +549,10 @@ export default function VoicePage() {
                 <button
                   key={tab}
                   onClick={() => { setModalTab(tab); setModalPage(1) }}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition capitalize ${
-                    modalTab === tab
-                      ? 'bg-teal-600 text-white'
-                      : 'text-stone-400 hover:text-stone-600 border border-stone-200'
-                  }`}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition capitalize ${modalTab === tab
+                    ? 'bg-teal-600 text-white'
+                    : 'text-stone-400 hover:text-stone-600 border border-stone-200'
+                    }`}
                 >
                   {tab === 'scripts' ? 'Scripts' : 'Longform'}
                 </button>
@@ -540,35 +589,35 @@ export default function VoicePage() {
                 <div className="flex flex-col gap-2">
                   {modalTab === 'scripts'
                     ? (modalPaginated as ScriptResponse[]).map(s => (
-                        <button
-                          key={s.id}
-                          onClick={() => handleSelectScript(s)}
-                          className="text-left border rounded-xl px-4 py-3 transition bg-stone-50 hover:bg-teal-50 border-stone-200 hover:border-teal-300"
-                        >
-                          {s.name && (
-                            <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wide mb-1">{s.name}</p>
-                          )}
-                          <p className="text-sm text-stone-800 leading-relaxed line-clamp-2">{s.fullText}</p>
-                          <p className="text-[11px] text-stone-300 mt-1.5">
-                            {LANG_FLAG[s.outputLang ?? s.inputLang]} {s.updatedAt?.slice(0, 10)}
-                          </p>
-                        </button>
-                      ))
+                      <button
+                        key={s.id}
+                        onClick={() => handleSelectScript(s)}
+                        className="text-left border rounded-xl px-4 py-3 transition bg-stone-50 hover:bg-teal-50 border-stone-200 hover:border-teal-300"
+                      >
+                        {s.name && (
+                          <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wide mb-1">{s.name}</p>
+                        )}
+                        <p className="text-sm text-stone-800 leading-relaxed line-clamp-2">{s.fullText}</p>
+                        <p className="text-[11px] text-stone-300 mt-1.5">
+                          {LANG_FLAG[s.outputLang ?? s.inputLang]} {s.updatedAt?.slice(0, 10)}
+                        </p>
+                      </button>
+                    ))
                     : (modalPaginated as LongformResponse[]).map(lf => (
-                        <button
-                          key={lf.id}
-                          onClick={() => handleSelectLongform(lf)}
-                          className="text-left border rounded-xl px-4 py-3 transition bg-stone-50 hover:bg-teal-50 border-stone-200 hover:border-teal-300"
-                        >
-                          {lf.title && (
-                            <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wide mb-1">{lf.title}</p>
-                          )}
-                          <p className="text-sm text-stone-800 leading-relaxed line-clamp-2">{lf.fullText}</p>
-                          <p className="text-[11px] text-stone-300 mt-1.5">
-                            {LANG_FLAG[lf.outputLang ?? lf.inputLang]} {lf.updatedAt?.slice(0, 10)}
-                          </p>
-                        </button>
-                      ))
+                      <button
+                        key={lf.id}
+                        onClick={() => handleSelectLongform(lf)}
+                        className="text-left border rounded-xl px-4 py-3 transition bg-stone-50 hover:bg-teal-50 border-stone-200 hover:border-teal-300"
+                      >
+                        {lf.title && (
+                          <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wide mb-1">{lf.title}</p>
+                        )}
+                        <p className="text-sm text-stone-800 leading-relaxed line-clamp-2">{lf.fullText}</p>
+                        <p className="text-[11px] text-stone-300 mt-1.5">
+                          {LANG_FLAG[lf.outputLang ?? lf.inputLang]} {lf.updatedAt?.slice(0, 10)}
+                        </p>
+                      </button>
+                    ))
                   }
                 </div>
               )}
@@ -615,9 +664,8 @@ function StepRow({ number, active, label, last, children }: StepRowProps) {
   return (
     <div className="flex gap-4 mb-4">
       <div className="flex flex-col items-center">
-        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 transition ${
-          active ? 'bg-teal-600 text-white' : 'bg-stone-200 text-stone-400'
-        }`}>
+        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 transition ${active ? 'bg-teal-600 text-white' : 'bg-stone-200 text-stone-400'
+          }`}>
           {number}
         </div>
         {!last && (
@@ -625,9 +673,8 @@ function StepRow({ number, active, label, last, children }: StepRowProps) {
         )}
       </div>
       <div className="flex-1 pb-4">
-        <p className={`text-[11px] font-semibold uppercase tracking-wide mb-2 mt-1 transition ${
-          active ? 'text-stone-500' : 'text-stone-300'
-        }`}>
+        <p className={`text-[11px] font-semibold uppercase tracking-wide mb-2 mt-1 transition ${active ? 'text-stone-500' : 'text-stone-300'
+          }`}>
           {label}
         </p>
         <div className={active ? '' : 'opacity-40 pointer-events-none'}>
