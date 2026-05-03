@@ -1,17 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Layout'
+import { useAuth } from '../context/AuthContext'
+import { generateLongform, refineLongform, saveLongform } from '../api/longforms'
+import { fetchIdeas, markIdeaUsed, type IdeaResponse } from '../api/ideas'
+import { LANGUAGES, LANG_FLAG } from '../data/languages'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-
-const LANGUAGES = [
-  { code: 'en', label: '🇬🇧 English' },
-  { code: 'ru', label: '🇷🇺 Русский' },
-  { code: 'de', label: '🇩🇪 Deutsch' },
-  { code: 'fr', label: '🇫🇷 Français' },
-  { code: 'es', label: '🇪🇸 Español' },
-  { code: 'uk', label: '🇺🇦 Українська' },
-]
 
 const PLACEHOLDERS = [
   "I spent years chasing productivity systems — apps, routines, morning rituals. None of it worked until I realised the problem wasn't my habits. It was what I was optimising for.",
@@ -21,190 +16,130 @@ const PLACEHOLDERS = [
   "I moved to a different country without a plan, a job, or a social network. It was the best and worst decision I've ever made.",
 ]
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+const MODAL_PAGE_SIZE = 8
 
-interface GeneratedVariant {
-  id: string
-  title: string
-  text: string
-  tr?: string
-  instruction: string
-  refining: boolean
-  children: RefinedVariant[]
-}
-
-interface RefinedVariant {
-  id: string
-  title: string
-  text: string
-  tr?: string
-  instruction: string
-  refining: boolean
-  children: RefinedVariant[]
-}
-
-// ── Mock data ──────────────────────────────────────────────────────────────────
-
-const mockIdeas = [
-  { id: 'i1', idea: 'Productivity systems only work when you\'ve figured out what you actually want to produce.', note: 'Personal story + framework' },
-  { id: 'i2', idea: 'The moment you start optimising your life, you risk optimising the meaning out of it.', note: '' },
-  { id: 'i3', idea: 'Burnout doesn\'t come from working too hard — it comes from working on the wrong things for too long.', note: 'Based on personal experience' },
+const STYLE_OPTIONS = [
+  { value: 'story', label: 'Story', hint: 'Personal narrative. Emotion builds slowly.' },
+  { value: 'flow', label: 'Flow', hint: 'Smooth and natural. Easy to follow.' },
+  { value: 'expert', label: 'Expert', hint: 'Authoritative. Facts, specifics, no fluff.' },
+  { value: 'edge', label: 'Edge', hint: 'Provocative. Contrarian, dry wit.' },
+  { value: 'spark', label: 'Spark', hint: 'Hits hard from the first line. Short punches, escalating.' },
 ]
 
-const mockGenerated: GeneratedVariant = {
-  id: 'v1',
-  title: 'Why Every Productivity System I Tried Failed — And What Finally Worked',
-  text: `There's a moment most people who are serious about their work will recognise. You've read the books. You've built the system. You've got the morning routine, the time-blocking, the app that tracks your habits. And still — at the end of another full day — you feel like you haven't really done anything that matters.
+const VOICE_OPTIONS = [
+  { value: 'direct', label: 'Talk to the viewer' },
+  { value: 'neutral', label: 'Impersonal fact' },
+]
 
-I spent two years in that loop. Not because I was lazy or undisciplined. If anything, I was too disciplined — executing with precision on a plan that was pointing in the wrong direction entirely.
+// label shown to user → character count sent to backend
+const LENGTH_OPTIONS = [
+  { value: 'short',    label: 'up to 3 min',  chars: 3000 },
+  { value: 'medium',   label: '5–7 min',       chars: 6000 },
+  { value: 'long',     label: '10–12 min',     chars: 11000 },
+  { value: 'extended', label: '15+ min',       chars: 16000 },
+]
 
-The first system I tried was Getting Things Done. Classic. I captured everything, processed everything, reviewed everything. My lists were immaculate. My actual work was mediocre.
+// ── Types ──────────────────────────────────────────────────────────────────────
 
-Then came time-blocking. Four-hour deep work sessions, Pomodoros, inbox-zero rituals. I got faster at shallow tasks. The deeper questions I kept avoiding got no clearer.
-
-What changed wasn't a new tool or a better framework. It was a single question I stopped being afraid to ask: what would actually matter in ten years?
-
-The answer was uncomfortable, because it didn't match what I was spending my time on.
-
-That gap — between what you say matters and how you spend your hours — is where almost every productivity failure lives. Not in the tools. Not in the habits. In the misalignment between the life you're performing and the life you actually want.
-
-This video isn't about a system. It's about what happens when you stop trying to optimise the wrong thing.`,
-  tr: `Есть момент, который узнает каждый, кто серьёзно относится к своей работе. Ты прочитал книги. Выстроил систему. У тебя есть утренний ритуал, тайм-блокинг, приложение для трекинга привычек. И всё равно — в конце ещё одного насыщенного дня — ощущение, что ничего по-настоящему важного сделано не было.
-
-Я провёл в этом круге два года. Не потому что был ленивым или несобранным. Скорее наоборот — действовал с точностью, но двигался не в ту сторону.
-
-Первой системой была Getting Things Done. Классика. Я фиксировал всё, обрабатывал всё, пересматривал всё. Списки были безупречны. Сама работа — посредственной.
-
-Потом пришло время тайм-блокинга. Четырёхчасовые сессии глубокого фокуса, помодоро, ритуалы нулевого инбокса. Я стал быстрее в мелких задачах. Глубокие вопросы, которых я избегал, светлее не стали.
-
-Изменил всё не новый инструмент и не более умный фреймворк. Это был единственный вопрос, который я наконец перестал бояться задать себе: что будет важно через десять лет?
-
-Ответ оказался неудобным — он не совпадал с тем, на что я тратил время.
-
-Этот разрыв — между тем, что ты называешь важным, и тем, как на самом деле проходят твои часы — и есть место, где живёт почти каждый провал продуктивности. Не в инструментах. Не в привычках. В несоответствии между жизнью, которую ты разыгрываешь, и жизнью, которой ты хочешь.
-
-Это видео не о системе. Это о том, что происходит, когда перестаёшь оптимизировать не то.`,
-  instruction: '',
-  refining: false,
-  children: [],
+interface Variant {
+  id: string
+  title: string
+  text: string
+  tr?: string
+  instruction: string
+  refining: boolean
+  parentId?: string
 }
 
 // ── Variant card ───────────────────────────────────────────────────────────────
 
 interface VariantCardProps {
-  variant: GeneratedVariant | RefinedVariant
+  variant: Variant
   showTr: boolean
-  depth?: number
-  onSave: (title: string, text: string) => void
-  onInstructionChange: (id: string, value: string) => void
+  onSave: (v: Variant, title: string, text: string) => void
   onRefine: (id: string) => void
   onDelete: (id: string) => void
+  onInstructionChange: (id: string, value: string) => void
+  onTitleChange: (id: string, value: string) => void
+  cardRef?: (el: HTMLDivElement | null) => void
 }
 
 function VariantCard({
-  variant,
-  showTr,
-  depth = 0,
-  onSave,
-  onInstructionChange,
-  onRefine,
-  onDelete,
+  variant, showTr, onSave, onRefine, onDelete, onInstructionChange, onTitleChange, cardRef,
 }: VariantCardProps) {
   const [title, setTitle] = useState(variant.title)
   const [text, setText] = useState(variant.text)
-  const isRefining = variant.refining
 
   return (
-    <div className={`${depth > 0 ? 'ml-5 border-l-2 border-stone-100 pl-4' : ''}`}>
-      <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
+    <div ref={cardRef} className="bg-white border border-stone-200 rounded-xl overflow-hidden transition">
 
-        {/* Title field */}
-        <div className="px-5 pt-5 pb-0">
-          <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Title</label>
-          <input
-            type="text"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2.5 text-sm font-semibold text-stone-800 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition"
-          />
-        </div>
-
-        {/* Text field */}
-        <div className="px-5 pt-4 pb-3">
-          <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Script</label>
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            rows={16}
-            className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2.5 text-sm text-stone-800 leading-relaxed outline-none resize-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition"
-          />
-
-          {/* Translation */}
-          {showTr && variant.tr && (
-            <p className="text-xs text-stone-400 italic leading-relaxed whitespace-pre-line border-t border-stone-100 pt-3 mt-1">
-              {variant.tr}
-            </p>
-          )}
-        </div>
-
-        {/* Instruction field */}
-        <div className="border-t border-stone-100 px-5 py-3 bg-stone-50/60">
-          <div className="flex gap-2 items-start">
-            <textarea
-              value={variant.instruction}
-              onChange={e => onInstructionChange(variant.id, e.target.value)}
-              placeholder="Shorten the intro · Add more personal story · Translate to German · Make the conclusion stronger…"
-              disabled={isRefining}
-              rows={3}
-              className="flex-1 bg-white border border-stone-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition placeholder-stone-300 disabled:opacity-50 resize-none"
-            />
-            <button
-              onClick={() => onRefine(variant.id)}
-              disabled={!variant.instruction.trim() || isRefining}
-              className="text-xs font-medium px-3 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-30 text-white transition whitespace-nowrap"
-            >
-              {isRefining ? 'Applying…' : 'Apply →'}
-            </button>
-          </div>
-          <p className="text-[10px] text-stone-300 mt-1.5">
-            A refined version will appear below — your current text stays untouched.
-          </p>
-        </div>
-
-        {/* Actions */}
-        <div className="border-t border-stone-100 px-5 py-3 flex items-center justify-between">
-          <button
-            onClick={() => onDelete(variant.id)}
-            className="text-xs text-red-400 hover:text-stone-400 transition"
-          >
-            Remove
-          </button>
-          <button
-            onClick={() => onSave(title, text)}
-            className="text-xs font-semibold px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-400 text-white transition"
-          >
-            Save this version
-          </button>
-        </div>
+      {/* Title */}
+      <div className="px-5 pt-5 pb-0">
+        <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Title</label>
+        <input
+          type="text"
+          value={title}
+          onChange={e => { setTitle(e.target.value); onTitleChange(variant.id, e.target.value) }}
+          placeholder="Short title for this script…"
+          className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2.5 text-sm font-semibold text-stone-800 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition"
+        />
       </div>
 
-      {/* Refined children */}
-      {variant.children.length > 0 && (
-        <div className="flex flex-col gap-4 mt-4">
-          {variant.children.map(child => (
-            <VariantCard
-              key={child.id}
-              variant={child}
-              showTr={showTr}
-              depth={depth + 1}
-              onSave={onSave}
-              onInstructionChange={onInstructionChange}
-              onRefine={onRefine}
-              onDelete={onDelete}
-            />
-          ))}
+      {/* Script text */}
+      <div className="px-5 pt-4 pb-3">
+        <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Script</label>
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          rows={20}
+          className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2.5 text-sm text-stone-800 leading-relaxed outline-none resize-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition"
+        />
+        {showTr && variant.tr && (
+          <p className="text-xs text-stone-400 italic leading-relaxed whitespace-pre-line border-t border-stone-100 pt-3 mt-1">
+            {variant.tr}
+          </p>
+        )}
+      </div>
+
+      {/* Refine */}
+      <div className="border-t border-stone-100 px-5 py-3 bg-stone-50/60">
+        <div className="flex gap-2 items-start">
+          <textarea
+            value={variant.instruction}
+            onChange={e => onInstructionChange(variant.id, e.target.value)}
+            placeholder="Shorten the intro · Add more personal story · Make the conclusion stronger…"
+            disabled={variant.refining}
+            rows={3}
+            className="flex-1 bg-white border border-stone-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition placeholder-stone-300 disabled:opacity-50 resize-none"
+          />
+          <button
+            onClick={() => onRefine(variant.id)}
+            disabled={!variant.instruction.trim() || variant.refining}
+            className="text-xs font-medium px-3 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-30 text-white transition whitespace-nowrap"
+          >
+            {variant.refining ? 'Applying…' : 'Apply →'}
+          </button>
         </div>
-      )}
+        <p className="text-[10px] text-stone-300 mt-1.5">
+          A refined version will appear right after this one.
+        </p>
+      </div>
+
+      {/* Actions */}
+      <div className="border-t border-stone-100 px-5 py-3 flex items-center justify-between">
+        <button
+          onClick={() => onDelete(variant.id)}
+          className="text-xs text-red-400 hover:text-red-500 transition"
+        >
+          Remove
+        </button>
+        <button
+          onClick={() => onSave(variant, title, text)}
+          className="text-xs font-semibold px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-400 text-white transition"
+        >
+          Save this version
+        </button>
+      </div>
     </div>
   )
 }
@@ -213,143 +148,183 @@ function VariantCard({
 
 export default function NewLongformPage() {
   const navigate = useNavigate()
+  const { token } = useAuth()
 
   const [inputLang, setInputLang] = useState('ru')
   const [outputLang, setOutputLang] = useState('en')
   const showTr = inputLang !== outputLang
 
   const [source, setSource] = useState('')
-  const [ideaText, setIdeaText] = useState('')
-  const [note, setNote] = useState('')
+  const [coreMessage, setCoreMessage] = useState('')
 
-  const [modalOpen, setModalOpen] = useState(false)
-  const [modalSearch, setModalSearch] = useState('')
+  // Style, voice, length — persisted in localStorage
+  const [style, setStyle] = useState<string>(() =>
+    localStorage.getItem('longformStyle') ?? 'flow'
+  )
+  const [voice, setVoice] = useState<string>(() =>
+    localStorage.getItem('longformVoice') ?? 'neutral'
+  )
+  const [length, setLength] = useState<string>(() =>
+    localStorage.getItem('longformLength') ?? 'medium'
+  )
+
+  const handleStyleChange = (v: string) => { setStyle(v); localStorage.setItem('longformStyle', v) }
+  const handleVoiceChange = (v: string) => { setVoice(v); localStorage.setItem('longformVoice', v) }
+  const handleLengthChange = (v: string) => { setLength(v); localStorage.setItem('longformLength', v) }
 
   const [generating, setGenerating] = useState(false)
   const [generated, setGenerated] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const [variants, setVariants] = useState<GeneratedVariant[]>([])
+  const [variants, setVariants] = useState<Variant[]>([])
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  const [modalShowUsed, setModalShowUsed] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalSearch, setModalSearch] = useState('')
+  const [modalPage, setModalPage] = useState(1)
+  const [ideas, setIdeas] = useState<IdeaResponse[]>([])
+  const [ideasLoading, setIdeasLoading] = useState(false)
 
   const [placeholder] = useState(
     () => 'E.g.: ' + PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)]
   )
 
-  const filteredIdeas = mockIdeas.filter(i =>
-    i.idea.toLowerCase().includes(modalSearch.toLowerCase())
-  )
+  useEffect(() => {
+    if (!modalOpen || ideas.length > 0 || !token) return
+    setIdeasLoading(true)
+    fetchIdeas(token)
+      .then(setIdeas)
+      .catch(() => {})
+      .finally(() => setIdeasLoading(false))
+  }, [modalOpen, token])
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  const filteredIdeas = useMemo(() => {
+    const q = modalSearch.toLowerCase().trim()
+    let list = modalShowUsed ? ideas.filter(i => i.used) : ideas.filter(i => !i.used)
+    if (q) list = list.filter(i =>
+      i.idea.toLowerCase().includes(q) || i.source.toLowerCase().includes(q)
+    )
+    return list
+  }, [ideas, modalSearch, modalShowUsed])
 
-  const handleGenerate = () => {
-    if (!source.trim() && !ideaText.trim()) return
+  const modalTotalPages = Math.ceil(filteredIdeas.length / MODAL_PAGE_SIZE)
+  const modalPaginated = filteredIdeas.slice((modalPage - 1) * MODAL_PAGE_SIZE, modalPage * MODAL_PAGE_SIZE)
+  const usedCount = useMemo(() => ideas.filter(i => i.used).length, [ideas])
+
+  const currentLengthChars = LENGTH_OPTIONS.find(l => l.value === length)?.chars ?? 6000
+  const currentStyleHint = STYLE_OPTIONS.find(s => s.value === style)?.hint
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  const handleGenerate = async () => {
+    if (!source.trim() || !token) return
     setGenerating(true)
-    setTimeout(() => {
-      setVariants([{ ...mockGenerated }])
-      setGenerating(false)
-      setGenerated(true)
-    }, 1600)
-  }
-
-  const handleSelectIdea = (idea: typeof mockIdeas[0]) => {
-    setIdeaText(idea.idea)
-    setNote(idea.note)
-    setModalOpen(false)
-    setModalSearch('')
-  }
-
-  const updateInstruction = (id: string, value: string) => {
-    setVariants(prev => updateInTree(prev, id, v => ({ ...v, instruction: value })))
-  }
-
-  const handleRefine = (id: string) => {
-    setVariants(prev => updateInTree(prev, id, v => ({ ...v, refining: true })))
-    setTimeout(() => {
-      const childId = `${id}-r${Date.now()}`
-      const child: RefinedVariant = {
-        id: childId,
-        title: `[Refined title based on: "${getInstruction(id)}"]`,
-        text: `[Refined version based on: "${getInstruction(id)}"]\n\nThis is where the AI-refined text would appear. The original structure is preserved but adjusted per your instruction.`,
-        tr: showTr ? `[Перевод улучшенной версии]` : undefined,
+    setError(null)
+    setGenerated(false)
+    setVariants([])
+    try {
+      const result = await generateLongform(
+        source, coreMessage, inputLang, outputLang, token,
+        style, voice, String(currentLengthChars)
+      )
+      setVariants([{
+        id: `v0-${Date.now()}`,
+        title: result.title ?? '',
+        text: result.text,
+        tr: result.tr,
         instruction: '',
         refining: false,
-        children: [],
+      }])
+      setGenerated(true)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : ''
+      if (msg === 'moderation') setError("This content couldn't be processed. Try rephrasing.")
+      else if (msg === 'rate_limit') setError('Too many requests. Please wait a moment.')
+      else if (msg === 'timeout') setError('AI is taking too long. Please try again.')
+      else setError('Something went wrong. Please try again.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleRefine = async (id: string) => {
+    const variant = variants.find(v => v.id === id)
+    if (!variant || !token) return
+    setVariants(prev => prev.map(v => v.id === id ? { ...v, refining: true } : v))
+    try {
+      const result = await refineLongform(variant.text, variant.instruction, inputLang, outputLang, token)
+      const newId = `${id}-r${Date.now()}`
+      const newVariant: Variant = {
+        id: newId,
+        title: variant.title,
+        text: result.text,
+        tr: result.tr,
+        instruction: '',
+        refining: false,
+        parentId: id,
       }
-      setVariants(prev =>
-        updateInTree(prev, id, v => ({
-          ...v,
-          refining: false,
-          instruction: '',
-          children: [...v.children, child],
-        }))
-      )
-    }, 1400)
+      setVariants(prev => {
+        const updated = prev.map(v => v.id === id ? { ...v, refining: false, instruction: '' } : v)
+        const idx = updated.findIndex(v => v.id === id)
+        updated.splice(idx + 1, 0, newVariant)
+        return [...updated]
+      })
+      setTimeout(() => {
+        cardRefs.current[newId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    } catch {
+      setVariants(prev => prev.map(v => v.id === id ? { ...v, refining: false } : v))
+      setError('Failed to refine. Please try again.')
+    }
   }
 
   const handleDelete = (id: string) => {
-    setVariants(prev => deleteFromTree(prev, id))
+    setVariants(prev => prev.filter(v => v.id !== id))
   }
 
-  const handleSave = (_title: string, _text: string) => {
-    // TODO: save to backend
-    navigate('/longform')
-  }
-
-  // ── Tree helpers ─────────────────────────────────────────────────────────────
-
-  function getInstruction(id: string): string {
-    return findInTree(variants, id)?.instruction ?? ''
-  }
-
-  function findInTree(
-    nodes: (GeneratedVariant | RefinedVariant)[],
-    id: string
-  ): (GeneratedVariant | RefinedVariant) | null {
-    for (const n of nodes) {
-      if (n.id === id) return n
-      const found = findInTree(n.children, id)
-      if (found) return found
+  const handleSave = async (variant: Variant, title: string, text: string) => {
+    if (!token) return
+    try {
+      await saveLongform(
+        source, coreMessage, title, text,
+        variant.tr, inputLang, outputLang, token
+      )
+      setVariants(prev => prev.filter(v => v.id !== variant.id))
+    } catch {
+      setError('Failed to save. Please try again.')
     }
-    return null
   }
 
-  function updateInTree(
-    nodes: GeneratedVariant[],
-    id: string,
-    fn: (v: GeneratedVariant | RefinedVariant) => GeneratedVariant | RefinedVariant
-  ): GeneratedVariant[] {
-    return nodes.map(n => {
-      if (n.id === id) return fn(n) as GeneratedVariant
-      return { ...n, children: updateChildrenInTree(n.children, id, fn) }
-    })
+  const handleSelectIdea = (idea: IdeaResponse) => {
+    setCoreMessage(idea.idea)
+    if (!source.trim()) setSource(idea.source)
+    setModalOpen(false)
+    setModalSearch('')
+    setModalPage(1)
+    if (token && !idea.used) {
+      markIdeaUsed(idea.id, true, token)
+        .then(updated => setIdeas(prev => prev.map(i => i.id === updated.id ? updated : i)))
+        .catch(() => {})
+    }
   }
 
-  function updateChildrenInTree(
-    nodes: RefinedVariant[],
-    id: string,
-    fn: (v: GeneratedVariant | RefinedVariant) => GeneratedVariant | RefinedVariant
-  ): RefinedVariant[] {
-    return nodes.map(n => {
-      if (n.id === id) return fn(n) as RefinedVariant
-      return { ...n, children: updateChildrenInTree(n.children, id, fn) }
-    })
+  const setCardRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
+    cardRefs.current[id] = el
+  }, [])
+
+  const updateInstruction = (id: string, value: string) => {
+    setVariants(prev => prev.map(v => v.id === id ? { ...v, instruction: value } : v))
   }
 
-  function deleteFromTree(nodes: GeneratedVariant[], id: string): GeneratedVariant[] {
-    return nodes
-      .filter(n => n.id !== id)
-      .map(n => ({ ...n, children: deleteChildrenFromTree(n.children, id) }))
+  const updateTitle = (id: string, value: string) => {
+    setVariants(prev => prev.map(v => v.id === id ? { ...v, title: value } : v))
   }
 
-  function deleteChildrenFromTree(nodes: RefinedVariant[], id: string): RefinedVariant[] {
-    return nodes
-      .filter(n => n.id !== id)
-      .map(n => ({ ...n, children: deleteChildrenFromTree(n.children, id) }))
-  }
-
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <Layout breadcrumbs={[{ label: 'Longform', to: '/longform' }, { label: 'New Script' }]}>
+    <Layout breadcrumbs={[{ label: 'Longform', to: '/longform' }, { label: 'New Longform Script' }]}>
       <div className="max-w-4xl mx-auto">
 
         <div className="mb-6">
@@ -375,22 +350,16 @@ export default function NewLongformPage() {
           <span className="text-xs text-stone-500 font-medium shrink-0">Language:</span>
           <div className="flex items-center gap-2">
             <label className="text-xs text-stone-400">Input</label>
-            <select
-              value={inputLang}
-              onChange={e => setInputLang(e.target.value)}
-              className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
-            >
+            <select value={inputLang} onChange={e => setInputLang(e.target.value)}
+              className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer">
               {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
             </select>
           </div>
           <span className="text-stone-300 text-sm">→</span>
           <div className="flex items-center gap-2">
             <label className="text-xs text-stone-400">Output</label>
-            <select
-              value={outputLang}
-              onChange={e => setOutputLang(e.target.value)}
-              className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
-            >
+            <select value={outputLang} onChange={e => setOutputLang(e.target.value)}
+              className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer">
               {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
             </select>
           </div>
@@ -399,14 +368,12 @@ export default function NewLongformPage() {
           </span>
         </div>
 
-        {/* Input form */}
+        {/* Input card */}
         <div className="bg-white border border-stone-200 rounded-xl p-5 mb-6">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-medium text-stone-700">What's this video about?</p>
-            <button
-              onClick={() => setModalOpen(true)}
-              className="text-xs text-teal-600 hover:text-teal-500 border border-teal-200 hover:border-teal-400 px-3 py-1.5 rounded-lg transition"
-            >
+            <button onClick={() => setModalOpen(true)}
+              className="text-xs font-semibold text-teal-600 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-lg transition">
               Pick from Ideas →
             </button>
           </div>
@@ -414,41 +381,67 @@ export default function NewLongformPage() {
           <div className="flex flex-col gap-3">
             <div>
               <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Description *</label>
-              <textarea
-                value={source}
-                onChange={e => setSource(e.target.value)}
+              <textarea value={source} onChange={e => setSource(e.target.value)}
                 placeholder={placeholder}
                 rows={7}
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition resize-none placeholder-stone-400"
-              />
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition resize-none placeholder-stone-400" />
             </div>
             <div>
               <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Core message</label>
-              <textarea
-                value={ideaText}
-                onChange={e => setIdeaText(e.target.value)}
+              <textarea value={coreMessage} onChange={e => setCoreMessage(e.target.value)}
                 placeholder="The central argument or takeaway — what should the viewer walk away believing or doing?"
-                rows={2}
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition resize-none placeholder-stone-400"
-              />
+                rows={3}
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition resize-none placeholder-stone-400" />
             </div>
-            <div>
-              <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Notes</label>
-              <textarea
-                value={note}
-                onChange={e => setNote(e.target.value)}
-                placeholder="Tone, target audience, pacing, visual style, anything you'd tell a co-writer…"
-                rows={2}
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition resize-none placeholder-stone-400"
-              />
+
+            {/* Style, Voice, Length */}
+            <div className="flex items-start gap-3 pt-1">
+              <div className="flex-1">
+                <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Style</label>
+                <select value={style} onChange={e => handleStyleChange(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition cursor-pointer">
+                  {STYLE_OPTIONS.map(s => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+                {currentStyleHint && (
+                  <p className="text-[11px] text-stone-400 italic mt-1">{currentStyleHint}</p>
+                )}
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Voice</label>
+                <select value={voice} onChange={e => handleVoiceChange(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition cursor-pointer">
+                  {VOICE_OPTIONS.map(v => (
+                    <option key={v.value} value={v.value}>{v.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-stone-400 uppercase tracking-wide mb-1 block">Length</label>
+                <select value={length} onChange={e => handleLengthChange(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition cursor-pointer">
+                  {LENGTH_OPTIONS.map(l => (
+                    <option key={l.value} value={l.value}>{l.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-end mt-4">
+          {error && <p className="text-xs text-red-500 mt-3">{error}</p>}
+
+          <div className="flex items-center justify-between mt-4">
+            <button
+              onClick={() => navigate('/longform')}
+              className="bg-orange-500 hover:bg-orange-400 text-white text-sm font-semibold px-5 py-2 rounded-lg transition"
+            >
+              ← Longform
+            </button>
             <button
               onClick={handleGenerate}
-              disabled={(!source.trim() && !ideaText.trim()) || generating}
-              className="bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition"
+              disabled={!source.trim() || generating}
+              className="bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white text-sm font-semibold px-5 py-2 rounded-lg transition"
             >
               {generating ? 'Generating…' : 'Generate script →'}
             </button>
@@ -463,7 +456,8 @@ export default function NewLongformPage() {
                 Your script, ready to shape
               </h2>
               <p className="text-xs text-stone-400">
-                Edit directly, or describe what to change and hit Apply — a refined version will appear below your original. Save when you're happy.
+                Edit directly, or describe what to change and hit Apply — refined version appears right after.
+                Save when you're happy.
               </p>
             </div>
 
@@ -473,67 +467,123 @@ export default function NewLongformPage() {
                   key={variant.id}
                   variant={variant}
                   showTr={showTr}
-                  depth={0}
                   onSave={handleSave}
-                  onInstructionChange={updateInstruction}
                   onRefine={handleRefine}
                   onDelete={handleDelete}
+                  onInstructionChange={updateInstruction}
+                  onTitleChange={updateTitle}
+                  cardRef={setCardRef(variant.id)}
                 />
               ))}
             </div>
           </div>
         )}
+
+        {generated && variants.length === 0 && (
+          <div className="text-center py-10 text-stone-400 text-sm">
+            <p className="mb-3">Version removed.</p>
+            <button
+              onClick={() => { setGenerated(false); setError(null) }}
+              className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 px-3 py-1.5 rounded-lg transition"
+            >
+              Generate again
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Idea picker modal */}
+      {/* Ideas picker modal */}
       {modalOpen && (
-        <div
-          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 px-4"
-          onClick={() => setModalOpen(false)}
-        >
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={() => setModalOpen(false)}>
           <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6"
+            className="bg-white rounded-2xl shadow-xl flex flex-col"
+            style={{ width: '90vw', height: '90vh' }}
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-stone-100 shrink-0">
               <h3 className="text-base font-semibold text-stone-900">Pick an idea</h3>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="text-stone-400 hover:text-stone-600 transition text-lg leading-none"
-              >×</button>
+              <div className="flex items-center gap-2">
+                {usedCount > 0 && (
+                  <button
+                    onClick={() => { setModalShowUsed(p => !p); setModalPage(1) }}
+                    className={`text-xs px-2.5 py-1 rounded-lg border transition ${modalShowUsed
+                      ? 'bg-teal-600 border-teal-600 text-white'
+                      : 'bg-teal-50 border-teal-200 text-teal-600 hover:bg-teal-100'
+                    }`}
+                  >
+                    {modalShowUsed ? '← All ideas' : `Show used (${usedCount})`}
+                  </button>
+                )}
+                <button onClick={() => setModalOpen(false)}
+                  className="text-stone-400 hover:text-stone-600 transition text-xl leading-none ml-1">×</button>
+              </div>
             </div>
 
-            <div className="relative mb-4">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400"
-                fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search ideas…"
-                value={modalSearch}
-                onChange={e => setModalSearch(e.target.value)}
-                className="w-full bg-stone-50 border border-stone-200 rounded-lg pl-9 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500 placeholder-stone-400"
-              />
+            <div className="px-6 pt-4 pb-3 shrink-0">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400"
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                </svg>
+                <input type="text" placeholder="Search ideas…" value={modalSearch}
+                  onChange={e => { setModalSearch(e.target.value); setModalPage(1) }}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg pl-9 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500 placeholder-stone-400" />
+              </div>
             </div>
 
-            <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
-              {filteredIdeas.length === 0 ? (
-                <p className="text-sm text-stone-400 text-center py-6">No ideas found</p>
-              ) : filteredIdeas.map(idea => (
-                <button
-                  key={idea.id}
-                  onClick={() => handleSelectIdea(idea)}
-                  className="text-left bg-stone-50 hover:bg-teal-50 border border-stone-200 hover:border-teal-300 rounded-xl px-4 py-3 transition"
-                >
-                  <p className="text-sm text-stone-800 leading-relaxed">{idea.idea}</p>
-                  {idea.note && (
-                    <p className="text-xs text-stone-400 mt-1 italic">{idea.note}</p>
-                  )}
+            <div className="flex-1 overflow-y-auto px-6 pb-2">
+              {ideasLoading ? (
+                <p className="text-sm text-stone-400 text-center py-10">Loading…</p>
+              ) : filteredIdeas.length === 0 ? (
+                <p className="text-sm text-stone-400 text-center py-10">
+                  {modalSearch ? `No ideas match "${modalSearch}"` : 'No ideas yet'}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {modalPaginated.map(idea => {
+                    const hasTranslation = idea.inputLang !== idea.outputLang && idea.ideaTr
+                    return (
+                      <button key={idea.id}
+                        onClick={() => handleSelectIdea(idea)}
+                        className="text-left border rounded-xl px-4 py-3 transition bg-stone-50 hover:bg-teal-50 border-stone-200 hover:border-teal-300">
+                        {hasTranslation ? (
+                          <>
+                            <p className="text-sm text-stone-800 leading-relaxed">{idea.ideaTr}</p>
+                            <p className="text-xs text-stone-400 mt-1 leading-relaxed italic">{idea.idea}</p>
+                          </>
+                        ) : (
+                          <p className="text-sm text-stone-800 leading-relaxed">{idea.idea}</p>
+                        )}
+                        {idea.source && (
+                          <p className="text-xs text-stone-300 mt-1.5 truncate">{idea.source}</p>
+                        )}
+                        {hasTranslation && (
+                          <p className="text-xs text-stone-300 mt-1">
+                            {LANG_FLAG[idea.inputLang]} → {LANG_FLAG[idea.outputLang]}
+                          </p>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {modalTotalPages > 1 && (
+              <div className="flex items-center justify-center gap-3 px-6 py-4 border-t border-stone-100 shrink-0">
+                <button onClick={() => setModalPage(p => Math.max(1, p - 1))} disabled={modalPage === 1}
+                  className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 px-3 py-1.5 rounded-lg transition disabled:opacity-30">
+                  ← Prev
                 </button>
-              ))}
-            </div>
+                <span className="text-xs text-stone-400">{modalPage} / {modalTotalPages}</span>
+                <button onClick={() => setModalPage(p => Math.min(modalTotalPages, p + 1))} disabled={modalPage === modalTotalPages}
+                  className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 px-3 py-1.5 rounded-lg transition disabled:opacity-30">
+                  Next →
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
