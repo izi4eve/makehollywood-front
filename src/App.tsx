@@ -16,6 +16,7 @@ import WrapPage from './pages/WrapPage'
 import NewLongformPage from './pages/NewLongformPage'
 import ConfirmPage from './pages/ConfirmPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import StockPage from './pages/StockPage'
 
 function Protected({ children }: { children: React.ReactNode }) {
   return <ProtectedRoute>{children}</ProtectedRoute>
@@ -45,12 +46,15 @@ export default function App() {
           <Route path="/longform/:id" element={<Protected><LongformPage /></Protected>} />
 
           <Route path="/voice" element={<Protected><VoicePage /></Protected>} />
+          <Route path="/stock" element={<Protected><StockPage /></Protected>} />
           <Route path="/video" element={<Protected><VideoPage /></Protected>} />
 
           <Route path="/director" element={<Protected><DirectorPage /></Protected>} />
           <Route path="/director/new" element={<Protected><DirectorPage /></Protected>} />
 
           <Route path="/wrap" element={<Protected><WrapPage /></Protected>} />
+
+          <Route path="/feedback" element={<Protected><div /></Protected>} />
 
           <Route path="*" element={<Navigate to="/ideas" replace />} />
         </Routes>

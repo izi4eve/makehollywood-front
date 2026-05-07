@@ -7,23 +7,44 @@ const navGroups = [
   {
     items: [
       { path: '/scripts', label: 'Scripts' },
-      { path: '/longform', label: 'Longform', hidden: false },
+      { path: '/longform', label: 'Longform' },
     ],
   },
   { items: [{ path: '/voice', label: 'Voice' }] },
+  { items: [{ path: '/stock', label: 'Stock' }] },
   {
     items: [
       { path: '/video', label: 'Video' },
-      { path: '/director', label: 'Director', hidden: false },
+      { path: '/director', label: 'Director' },
     ],
   },
   { items: [{ path: '/wrap', label: 'Wrap' }] },
+  { items: [{ path: '/feedback', label: 'Feedback' }] },
+]
+
+const iconLinks = [
   {
-    items: [
-      { path: '/help', label: 'Help', hidden: false },
-      { path: '/feedback', label: 'Feedback', hidden: false },
-      { path: '/account', label: 'Account', hidden: false },
-    ]
+    path: '/help',
+    label: 'Help',
+    icon: (
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" strokeWidth={1.8} />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+          d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+        <circle cx="12" cy="17" r=".5" fill="currentColor" strokeWidth={0} />
+      </svg>
+    ),
+  },
+  {
+    path: '/account',
+    label: 'Account',
+    icon: (
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <circle cx="12" cy="8" r="4" strokeWidth={1.8} />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+          d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+      </svg>
+    ),
   },
 ]
 
@@ -40,16 +61,6 @@ export interface BreadcrumbItem {
   to?: string
 }
 
-interface NavItem {
-  path: string
-  label: string
-  hidden?: boolean
-}
-
-interface NavGroup {
-  items: NavItem[]
-}
-
 interface LayoutProps {
   children: ReactNode
   breadcrumbs?: BreadcrumbItem[]
@@ -60,11 +71,6 @@ export default function Layout({ children, breadcrumbs }: LayoutProps) {
   const navigate = useNavigate()
   const cta = getCtaForPath(location.pathname)
   const isActive = (path: string) => location.pathname.startsWith(path)
-
-  // Filter out fully-hidden groups (all items hidden)
-  const visibleGroups: NavGroup[] = navGroups
-    .map(g => ({ items: g.items.filter(i => !i.hidden) }))
-    .filter(g => g.items.length > 0)
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900">
@@ -83,7 +89,7 @@ export default function Layout({ children, breadcrumbs }: LayoutProps) {
         </Link>
 
         <div className="flex items-center gap-1 overflow-x-auto">
-          {visibleGroups.map((group, gi) => (
+          {navGroups.map((group, gi) => (
             <div key={gi} className="flex items-center gap-1 shrink-0">
               {gi > 0 && (
                 <span className="text-stone-300 text-sm mx-1.5 select-none">→</span>
@@ -109,16 +115,33 @@ export default function Layout({ children, breadcrumbs }: LayoutProps) {
           ))}
         </div>
 
-        {cta && (
-          <div className="ml-auto shrink-0">
+        {/* Icon buttons for Help & Account */}
+        <div className="flex items-center gap-1 ml-auto shrink-0">
+          {iconLinks.map(({ path, label, icon }) => (
+            <Link
+              key={path}
+              to={path}
+              title={label}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg transition ${
+                isActive(path)
+                  ? 'text-teal-600 bg-teal-50'
+                  : 'text-stone-400 hover:text-stone-700 hover:bg-stone-100'
+              }`}
+            >
+              {icon}
+            </Link>
+          ))}
+
+          {/* CTA button */}
+          {cta && (
             <button
               onClick={() => navigate(cta.to)}
-              className="bg-orange-500 hover:bg-orange-400 text-white text-sm font-semibold px-4 py-2 rounded-lg transition"
+              className="ml-2 bg-orange-500 hover:bg-orange-400 text-white text-sm font-semibold px-4 py-2 rounded-lg transition"
             >
               {cta.label}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </nav>
 
       {breadcrumbs && breadcrumbs.length > 0 && (
